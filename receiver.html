@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Connect · 电脑接收页</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 800px; margin: 32px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.5rem; }
+    .box { min-height: 150px; padding: 12px; border: 1px solid #aaa; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    button { margin-top: 16px; padding: 10px 18px; border: 0; border-radius: 6px; color: white; background: #1764be; font: inherit; }
+    button + button { margin-left: 8px; }
+    button:disabled { opacity: .6; }
+    #status { min-height: 1.5em; }
+    #photo-status { min-height: 1.5em; }
+  </style>
+</head>
+<body>
+  <h1>Local Connect · 电脑接收页</h1>
+  <p>手机发送的最新文本会显示在这里。</p>
+  <div id="text" class="box" aria-live="polite"></div>
+  <button id="copy" type="button" disabled>复制文本</button>
+  <p id="status" role="status" aria-live="polite">等待文本…</p>
+  <h2>手机照片</h2>
+  <p>照片会保存到电脑项目目录的 <code>uploads</code> 文件夹；PDF 每张照片一页，自动匹配横版或竖版 A4。</p>
+  <p id="photo-folder"></p>
+  <ol id="photo-list"></ol>
+  <button id="make-pdf" type="button" disabled>一键生成并下载 PDF</button>
+  <a id="pdf-download" href="/api/photos/pdf" download="photos.pdf" hidden>再次下载 PDF</a>
+  <button id="new-batch" type="button" disabled>开始新批次</button>
+  <p id="photo-status" role="status" aria-live="polite">等待照片…</p>
+  <script>
+    const textBox = document.getElementById("text");
+    const copyButton = document.getElementById("copy");
+    const status = document.getElementById("status");
+    const photoList = document.getElementById("photo-list");
+    const photoFolder = document.getElementById("photo-folder");
+    const photoStatus = document.getElementById("photo-status");
+    const makePdfButton = document.getElementById("make-pdf");
+    const pdfDownload = document.getElementById("pdf-download");
+    const newBatchButton = document.getElementById("new-batch");
+    let latestVersion = 0;
+    let photoVersion = -1;
+    let pdfReady = false;
+    let makingPdf = false;
+
+    function renderPhotos(result) {
+      if (result.photo_version === photoVersion && result.pdf_ready === pdfReady) return;
+      photoVersion = result.photo_version;
+      pdfReady = result.pdf_ready;
+      photoList.replaceChildren();
+      result.photos.forEach((photo, index) => {
+        const item = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = `/api/photos/${index + 1}`;
+        link.textContent = `${photo.name} · ${photo.width}×${photo.height}`;
+        link.download = photo.name;
+        item.appendChild(link);
+        photoList.appendChild(item);
+      });
+      photoFolder.textContent = result.photo_folder ? `保存位置：${result.photo_folder}` : "";
+      photoStatus.textContent = result.photos.length
+        ? `已收到 ${result.photos.length} 张照片${result.pdf_ready ? "，PDF 已生成。" : "，可生成 PDF。"}`
+        : "等待照片…";
+      makePdfButton.disabled = !result.photos.length || makingPdf;
+      newBatchButton.disabled = !result.photos.length;
+      pdfDownload.hidden = !result.pdf_ready;
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch("/api/latest", { cache: "no-store" });
+        if (!response.ok) throw new Error("read failed");
+        const result = await response.json();
+        renderPhotos(result);
+        if (result.version !== latestVersion) {
+          latestVersion = result.version;
+          textBox.textContent = result.text;
+          copyButton.disabled = !latestVersion;
+          status.textContent = latestVersion ? "已收到最新文本。" : "等待文本…";
+        }
+      } catch {
+        status.textContent = "连接中断，正在重试…";
+      } finally {
+        setTimeout(refresh, 1000);
+      }
+    }
+
+    async function copy(value) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const temporary = document.createElement("textarea");
+        temporary.value = value;
+        temporary.style.position = "fixed";
+        temporary.style.opacity = "0";
+        document.body.appendChild(temporary);
+        temporary.select();
+        const copied = document.execCommand("copy");
+        temporary.remove();
+        if (!copied) throw new Error("copy failed");
+      }
+    }
+
+    copyButton.addEventListener("click", async () => {
+      try {
+        await copy(textBox.textContent);
+        status.textContent = "已复制，可直接粘贴。";
+      } catch {
+        status.textContent = "复制失败，请选中文本后手动复制。";
+      }
+    });
+
+    makePdfButton.addEventListener("click", async () => {
+      makingPdf = true;
+      makePdfButton.disabled = true;
+      photoStatus.textContent = "正在生成 PDF…";
+      try {
+        const response = await fetch("/api/photos/pdf", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "生成 PDF 失败");
+        renderPhotos(result);
+        pdfDownload.click();
+      } catch (error) {
+        photoStatus.textContent = error.message || "生成 PDF 失败";
+      } finally {
+        makingPdf = false;
+        makePdfButton.disabled = photoList.children.length === 0;
+      }
+    });
+    newBatchButton.addEventListener("click", async () => {
+      newBatchButton.disabled = true;
+      try {
+        const response = await fetch("/api/photos/new", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "开始新批次失败");
+        renderPhotos(result);
+      } catch (error) {
+        photoStatus.textContent = error.message || "开始新批次失败";
+        newBatchButton.disabled = false;
+      }
+    });
+    refresh();
+  </script>
+</body>
+</html>

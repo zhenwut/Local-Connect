@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Connect · 手机发送页</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 680px; margin: 32px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.5rem; }
+    label { display: block; margin: 18px 0 6px; font-weight: 600; }
+    input, textarea, button { box-sizing: border-box; font: inherit; }
+    input, textarea { width: 100%; padding: 10px; border: 1px solid #aaa; border-radius: 6px; }
+    textarea { min-height: 220px; resize: vertical; }
+    button { margin-top: 16px; padding: 10px 18px; border: 0; border-radius: 6px; color: white; background: #1764be; }
+    button:disabled { opacity: .6; }
+    #status { min-height: 1.5em; }
+    #photo-status { min-height: 1.5em; }
+  </style>
+</head>
+<body>
+  <h1>Local Connect · 发送文本和照片到电脑</h1>
+  <label for="code">电脑终端显示的访问码</label>
+  <input id="code" name="code" autocomplete="off" autocapitalize="characters" required>
+  <form id="form">
+    <label for="text">文本</label>
+    <textarea id="text" name="text" maxlength="65536" required></textarea>
+    <button id="send" type="submit">发送</button>
+  </form>
+  <p id="status" role="status" aria-live="polite"></p>
+  <h2>上传 JPG 照片</h2>
+  <p>可一次选择多张。每张最多 20 MiB，每批最多 30 张、合计 150 MiB；上传后在电脑接收页点击“生成 PDF”。</p>
+  <input id="photos" type="file" accept="image/jpeg,.jpg,.jpeg" multiple>
+  <button id="upload" type="button">上传所选照片</button>
+  <p id="photo-status" role="status" aria-live="polite"></p>
+  <script>
+    const form = document.getElementById("form");
+    const status = document.getElementById("status");
+    const button = document.getElementById("send");
+    const photoInput = document.getElementById("photos");
+    const uploadButton = document.getElementById("upload");
+    const photoStatus = document.getElementById("photo-status");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      status.textContent = "正在发送…";
+      try {
+        const response = await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: document.getElementById("code").value,
+            text: document.getElementById("text").value
+          })
+        });
+        const result = await response.json();
+        status.textContent = response.ok ? "发送成功，电脑接收页已更新。" : result.error;
+      } catch {
+        status.textContent = "连接失败，请检查电脑服务和 Wi-Fi 连接。";
+      } finally {
+        button.disabled = false;
+      }
+    });
+    uploadButton.addEventListener("click", async () => {
+      const files = Array.from(photoInput.files);
+      if (!document.getElementById("code").value.trim()) {
+        photoStatus.textContent = "请先填写访问码。";
+        return;
+      }
+      if (!files.length) {
+        photoStatus.textContent = "请先选择 JPG 照片。";
+        return;
+      }
+      if (files.length > 30) {
+        photoStatus.textContent = "一次最多选择 30 张照片。";
+        return;
+      }
+      if (files.some(file => !/\.jpe?g$/i.test(file.name) || file.size > 20 * 1024 * 1024)) {
+        photoStatus.textContent = "只能上传 .jpg/.jpeg，每张不能超过 20 MiB。";
+        return;
+      }
+      uploadButton.disabled = true;
+      let sent = 0;
+      try {
+        for (const file of files) {
+          photoStatus.textContent = `正在上传第 ${sent + 1}/${files.length} 张：${file.name}`;
+          const response = await fetch("/api/photos", {
+            method: "POST",
+            headers: {
+              "Content-Type": "image/jpeg",
+              "X-Access-Code": document.getElementById("code").value
+            },
+            body: file
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "上传失败");
+          sent += 1;
+        }
+        photoStatus.textContent = `已上传 ${sent} 张照片，请在电脑接收页生成 PDF。`;
+        photoInput.value = "";
+      } catch (error) {
+        photoStatus.textContent = `已上传 ${sent} 张；后续上传失败：${error.message || "连接中断"}`;
+      } finally {
+        uploadButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
