@@ -2,16 +2,12 @@
 
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
-
-from server import detect_lan_ip
-
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / ".server.log"
@@ -29,15 +25,17 @@ def is_running():
 
 
 def show_access():
-    text = OUTPUT.read_text(encoding="utf-8", errors="replace") if OUTPUT.is_file() else ""
-    match = re.search(r"([A-HJ-NP-Z2-9]{8})", text)
     print("电脑接收页：http://localhost:8766/receiver")
-    address = detect_lan_ip()
-    print(f"手机发送页：http://{address}:8766/" if address else "请运行 ipconfig 查看电脑的 WLAN IPv4 地址")
-    if match:
-        print(f"本次访问码：{match.group(1)}")
-    else:
-        print("访问码请查看 .server.log；若端口被其他程序占用，请先关闭它。")
+    try:
+        with urlopen("http://127.0.0.1:8766/api/connect", timeout=2) as response:
+            connection = json.load(response)
+        if connection["mode"] == "manual":
+            print(f"手机发送页：{connection.get('web_url') or '请运行 ipconfig 查看电脑 IPv4 地址'}")
+            print(f"本次访问码：{connection['code']}")
+        else:
+            print("请在电脑接收页依次扫描热点二维码和传输页二维码。")
+    except (URLError, TimeoutError, ValueError, OSError, KeyError):
+        print("请打开电脑接收页查看二维码或手动连接信息。")
 
 
 def main():
@@ -65,7 +63,7 @@ def main():
             start_new_session=os.name != "nt",
             close_fds=True,
         )
-    for _ in range(50):
+    for _ in range(400):
         if is_running():
             print(f"后台服务已启动，进程 ID：{process.pid}")
             show_access()

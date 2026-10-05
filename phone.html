@@ -4,43 +4,179 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Local Connect · 手机发送页</title>
+  <link rel="stylesheet" href="/files-ui.css">
+  <script src="/files-ui.js"></script>
   <style>
-    body { font: 16px/1.5 system-ui, sans-serif; max-width: 680px; margin: 32px auto; padding: 0 16px; color: #222; }
-    h1 { font-size: 1.5rem; }
-    label { display: block; margin: 18px 0 6px; font-weight: 600; }
+    body { max-width: 680px; margin: 0 auto; padding: 24px 16px 56px; }
+    label { display: block; font-weight: 650; }
     input, textarea, button { box-sizing: border-box; font: inherit; }
-    input, textarea { width: 100%; padding: 10px; border: 1px solid #aaa; border-radius: 6px; }
-    textarea { min-height: 220px; resize: vertical; }
-    button { margin-top: 16px; padding: 10px 18px; border: 0; border-radius: 6px; color: white; background: #1764be; }
-    button:disabled { opacity: .6; }
-    #status { min-height: 1.5em; }
-    #photo-status { min-height: 1.5em; }
+    #manual-code, .phone-panel { padding: 22px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-soft); }
+    #manual-code { margin: 22px 0 16px; }
+    #manual-code label { margin-bottom: 10px; }
+    .phone-panel { margin-top: 16px; }
+    .phone-panel h2 { margin: 0 0 6px; }
+    .phone-panel > p { margin: 0 0 18px; color: var(--text-muted); }
+    #form label { margin: 18px 0 8px; }
+    #text { min-height: 188px; resize: vertical; }
+    #send { margin-top: 18px; width: 100%; }
+    .phone-panel .character-count { margin: 8px 0 0; }
+    #status, #photo-status { min-height: 1.5em; margin: 16px 0 0; }
+    #retry-upload { width: 100%; margin-top: 14px; }
+    .file-picker { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 6px; min-height: 138px; padding: 18px; box-sizing: border-box; border: 1.5px dashed var(--accent-soft); border-radius: var(--radius-md); background: var(--accent-wash); color: var(--accent-deep); text-align: center; cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+    .file-picker:hover { border-color: var(--accent); background: var(--accent-wash-hover); transform: translateY(-2px); }
+    .file-picker .picker-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-soft); font-size: 23px; line-height: 1; }
+    .file-picker small { color: var(--text-muted); font-size: 13px; font-weight: 400; }
+    #photos { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; }
+    #photos:focus-visible + .file-picker { outline: 3px solid var(--focus); outline-offset: 3px; }
+    #manual-code[hidden], #retry-upload[hidden] { display: none; }
+    @media (max-width: 480px) { #manual-code, .phone-panel { padding: 18px; } }
   </style>
 </head>
 <body>
-  <h1>Local Connect · 发送文本和照片到电脑</h1>
-  <label for="code">电脑终端显示的访问码</label>
-  <input id="code" name="code" autocomplete="off" autocapitalize="characters" required>
-  <form id="form">
+  <header class="app-header">
+    <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Local Connect</span><span class="brand-context">手机发送</span></div>
+    <h1>发送到电脑</h1>
+    <p>同一网络下，文字和文件可以直接送到电脑。</p>
+  </header>
+  <main>
+  <div id="manual-code">
+    <label for="code">电脑终端显示的访问码</label>
+    <input id="code" name="code" autocomplete="off" autocapitalize="characters" inputmode="text" maxlength="8" required>
+  </div>
+  <section class="phone-panel" aria-labelledby="upload-title">
+    <h2 id="upload-title">上传文件</h2>
+    <p>图片、视频、文档等格式都可发送；选择后自动上传。</p>
+    <input id="photos" type="file" multiple aria-describedby="file-help">
+    <label class="file-picker" for="photos"><span class="picker-icon" aria-hidden="true">↑</span><strong>选择文件上传</strong><small>可一次多选，也可分几次添加</small></label>
+    <p id="file-help" class="helper-text">单个文件最多 2 GiB；每批最多 100 个，合计 10 GiB。手机文件管理器通常可长按多选。</p>
+    <ul id="upload-queue" class="upload-queue" aria-label="上传队列"></ul>
+    <button id="retry-upload" type="button" hidden>重试未完成的文件</button>
+    <p id="photo-status" role="status" aria-live="polite"></p>
+  </section>
+  <form id="form" class="phone-panel">
+    <h2>发送文本</h2>
+    <p>电脑接收页会显示最近一次发送的内容。</p>
     <label for="text">文本</label>
     <textarea id="text" name="text" maxlength="65536" required></textarea>
-    <button id="send" type="submit">发送</button>
+    <p id="text-count" class="character-count" title="按 Unicode 字符计数，包含空格与换行">0 字符</p>
+    <button id="send" type="submit">发送文本 <span aria-hidden="true">↗</span></button>
+    <p id="status" role="status" aria-live="polite"></p>
   </form>
-  <p id="status" role="status" aria-live="polite"></p>
-  <h2>上传 JPG 照片</h2>
-  <p>可一次选择多张。每张最多 20 MiB，每批最多 30 张、合计 150 MiB；上传后在电脑接收页点击“生成 PDF”。</p>
-  <input id="photos" type="file" accept="image/jpeg,.jpg,.jpeg" multiple>
-  <button id="upload" type="button">上传所选照片</button>
-  <p id="photo-status" role="status" aria-live="polite"></p>
+  </main>
   <script>
+    const codeInput = document.getElementById("code");
+    const scannedCode = new URLSearchParams(location.hash.slice(1)).get("code");
+    if (scannedCode && /^[A-HJ-NP-Z2-9]{8}$/.test(scannedCode)) {
+      codeInput.value = scannedCode;
+      document.getElementById("manual-code").hidden = true;
+      history.replaceState(null, "", location.pathname + location.search);
+      fetch("/api/connect/arrived", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: scannedCode }), keepalive: true
+      }).catch(() => {});
+    }
+    function showCodeInputIfExpired(response) {
+      if (response.status === 403) {
+        document.getElementById("manual-code").hidden = false;
+        codeInput.value = "";
+      }
+    }
     const form = document.getElementById("form");
     const status = document.getElementById("status");
     const button = document.getElementById("send");
     const photoInput = document.getElementById("photos");
-    const uploadButton = document.getElementById("upload");
+    const retryButton = document.getElementById("retry-upload");
     const photoStatus = document.getElementById("photo-status");
+    const queueList = document.getElementById("upload-queue");
+    const textInput = document.getElementById("text");
+    const updateTextCount = () => {
+      document.getElementById("text-count").textContent = `${LocalFiles.characterCount(textInput.value).toLocaleString("zh-CN")} 字符`;
+    };
+    textInput.addEventListener("input", updateTextCount);
+    updateTextCount();
+    let queue = [];
+    let uploading = false;
+    function updateQueueSummary() {
+      const count = queue.filter(item => !item.done).length;
+      if (!uploading && !retryButton.hidden && count) {
+        photoStatus.textContent = `${count} 个文件未完成；请检查连接后点击重试，或移除无法上传的文件。`;
+      } else if (!uploading && count) {
+        photoStatus.textContent = codeInput.value.trim() ? `${count} 个文件等待自动上传…` : "请先填写访问码，文件会自动上传。";
+      }
+    }
+    photoInput.addEventListener("change", () => {
+      for (const file of photoInput.files) {
+        if (queue.some(item => !item.done && item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) continue;
+        const row = document.createElement("li");
+        row.className = "upload-row";
+        const name = document.createElement("strong");
+        name.textContent = file.name;
+        const detail = document.createElement("small");
+        detail.textContent = `${LocalFiles.formatSize(file.size)} · 等待上传`;
+        const progress = document.createElement("progress");
+        progress.max = 100;
+        progress.value = 0;
+        progress.setAttribute("aria-label", `${file.name} 上传进度`);
+        const item = { file, row, detail, progress, done: false };
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "remove-file";
+        remove.textContent = "移除";
+        remove.setAttribute("aria-label", `从队列移除 ${file.name}`);
+        remove.addEventListener("click", () => {
+          if (item.uploading || item.done) return;
+          queue = queue.filter(entry => entry !== item);
+          row.remove();
+          if (!queue.some(entry => !entry.done)) retryButton.hidden = true;
+          updateQueueSummary();
+          if (!uploading) startUpload();
+        });
+        row.append(name, detail, progress, remove);
+        queueList.appendChild(row);
+        queue.push(item);
+      }
+      photoInput.value = "";
+      updateQueueSummary();
+      startUpload();
+    });
+    codeInput.addEventListener("input", () => {
+      if (/^[A-HJ-NP-Z2-9]{8}$/i.test(codeInput.value.trim()) && !uploading) startUpload();
+    });
+
+    function uploadFile(item) {
+      return new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", "/api/files");
+        request.setRequestHeader("Content-Type", "application/octet-stream");
+        request.setRequestHeader("X-Access-Code", codeInput.value.trim());
+        request.setRequestHeader("X-File-Name", encodeURIComponent(item.file.name));
+        request.upload.addEventListener("progress", event => {
+          if (!event.lengthComputable) return;
+          const percent = Math.round(event.loaded * 100 / event.total);
+          item.progress.value = percent;
+          item.detail.textContent = `${LocalFiles.formatSize(item.file.size)} · ${percent === 100 ? "正在保存…" : percent + "%"}`;
+        });
+        request.addEventListener("load", () => {
+          showCodeInputIfExpired(request);
+          let result;
+          try { result = JSON.parse(request.responseText); }
+          catch { reject(new Error("服务响应异常，请重试")); return; }
+          if (request.status < 200 || request.status >= 300) {
+            reject(new Error(result.error || "上传失败")); return;
+          }
+          resolve(result);
+        });
+        request.addEventListener("error", () => reject(new Error("连接中断，请检查热点连接后重试")));
+        request.addEventListener("abort", () => reject(new Error("上传已中止")));
+        request.send(item.file);
+      });
+    }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (new TextEncoder().encode(textInput.value).length > 65536) {
+        status.textContent = "文本超过 64 KiB，请缩短后再发送。";
+        return;
+      }
       button.disabled = true;
       status.textContent = "正在发送…";
       try {
@@ -48,11 +184,12 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            code: document.getElementById("code").value,
+            code: codeInput.value,
             text: document.getElementById("text").value
           })
         });
         const result = await response.json();
+        showCodeInputIfExpired(response);
         status.textContent = response.ok ? "发送成功，电脑接收页已更新。" : result.error;
       } catch {
         status.textContent = "连接失败，请检查电脑服务和 Wi-Fi 连接。";
@@ -60,49 +197,64 @@
         button.disabled = false;
       }
     });
-    uploadButton.addEventListener("click", async () => {
-      const files = Array.from(photoInput.files);
-      if (!document.getElementById("code").value.trim()) {
+    async function startUpload() {
+      if (uploading) return;
+      const pending = queue.filter(item => !item.done);
+      if (!pending.length) return;
+      if (!codeInput.value.trim()) {
         photoStatus.textContent = "请先填写访问码。";
         return;
       }
-      if (!files.length) {
-        photoStatus.textContent = "请先选择 JPG 照片。";
+      if (pending.length > 100) {
+        photoStatus.textContent = "一次最多选择 100 个文件。";
+        retryButton.hidden = false;
         return;
       }
-      if (files.length > 30) {
-        photoStatus.textContent = "一次最多选择 30 张照片。";
+      if (pending.some(item => item.file.size > 2 * 1024 ** 3)) {
+        photoStatus.textContent = "单个文件不能超过 2 GiB。";
+        retryButton.hidden = false;
         return;
       }
-      if (files.some(file => !/\.jpe?g$/i.test(file.name) || file.size > 20 * 1024 * 1024)) {
-        photoStatus.textContent = "只能上传 .jpg/.jpeg，每张不能超过 20 MiB。";
+      if (pending.reduce((sum, item) => sum + item.file.size, 0) > 10 * 1024 ** 3) {
+        photoStatus.textContent = "每批文件总量不能超过 10 GiB。";
+        retryButton.hidden = false;
         return;
       }
-      uploadButton.disabled = true;
+      uploading = true;
+      retryButton.hidden = true;
       let sent = 0;
+      let current;
       try {
-        for (const file of files) {
-          photoStatus.textContent = `正在上传第 ${sent + 1}/${files.length} 张：${file.name}`;
-          const response = await fetch("/api/photos", {
-            method: "POST",
-            headers: {
-              "Content-Type": "image/jpeg",
-              "X-Access-Code": document.getElementById("code").value
-            },
-            body: file
-          });
-          const result = await response.json();
-          if (!response.ok) throw new Error(result.error || "上传失败");
+        while (true) {
+          const item = queue.find(entry => !entry.done && !entry.uploading);
+          if (!item) break;
+          current = item;
+          item.uploading = true;
+          item.row.dataset.state = "uploading";
+          photoStatus.textContent = `正在上传：${item.file.name}（本轮第 ${sent + 1} 个）`;
+          await uploadFile(item);
+          item.done = true;
+          item.uploading = false;
+          item.row.dataset.state = "done";
+          item.progress.value = 100;
+          item.detail.textContent = `${LocalFiles.formatSize(item.file.size)} · 已完成`;
+          item.row.querySelector(".remove-file").hidden = true;
           sent += 1;
         }
-        photoStatus.textContent = `已上传 ${sent} 张照片，请在电脑接收页生成 PDF。`;
-        photoInput.value = "";
+        photoStatus.textContent = `已上传 ${sent} 个文件，请在电脑接收页查看。`;
       } catch (error) {
-        photoStatus.textContent = `已上传 ${sent} 张；后续上传失败：${error.message || "连接中断"}`;
+        if (current && !current.done) {
+          current.uploading = false;
+          current.row.dataset.state = "error";
+          current.detail.textContent = error.message;
+        }
+        photoStatus.textContent = `本轮已上传 ${sent} 个；${error.message || "连接中断"}。检查后可重试未完成的文件。`;
+        retryButton.hidden = false;
       } finally {
-        uploadButton.disabled = false;
+        uploading = false;
       }
-    });
+    }
+    retryButton.addEventListener("click", startUpload);
   </script>
 </body>
 </html>

@@ -1,19 +1,25 @@
-"""A small, dependency-free phone-to-PC text and photo transfer server."""
+"""Local phone-to-PC text and file transfer with JPG-to-PDF support."""
 
 import argparse
 import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import socket
 import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from photo_pdf import inspect_jpeg, write_pdf
+from connection import ConnectionManager, qr_svg
+from file_transfer import FileStore, MAX_FILE_BYTES
+from receiver_lifecycle import ReceiverLifecycle
+from pdf_workspace import PdfWorkspace
+from pdf_convert import IMAGE_FORMATS, file_format, thumbnail_png
 
 
 ROOT = Path(__file__).resolve().parent
@@ -36,8 +42,11 @@ class TransferState:
     def __init__(self, code, uploads_root):
         self.code = code
         self.text = ""
+        self.phone_opened = False
         self.version = 0
         self.uploads_root = Path(uploads_root)
+        self.files = FileStore(self.uploads_root)
+        self.pdf_workspace = PdfWorkspace(self.files)
         self.batch_name = self._new_batch_name()
         self.photos = []
         self.photo_version = 0
@@ -65,19 +74,47 @@ class TransferState:
             self.version += 1
             return self.version
 
+    def mark_phone_opened(self):
+        with self.lock:
+            self.phone_opened = True
+
+    def phone_opened_status(self):
+        with self.lock:
+            return self.phone_opened
+
     def latest(self):
         with self.lock:
             return {
                 "version": self.version,
                 "text": self.text,
                 **self._photo_status(),
+                **self.files.status(),
+                **self.pdf_workspace.status(),
             }
+
+    def include_file_in_pdf(self, item):
+        if item["preview_type"] != "image/jpeg" or item["bytes"] > MAX_PHOTO_BYTES:
+            return False
+        try:
+            metadata = inspect_jpeg(item["path"].read_bytes())
+        except (OSError, ValueError):
+            return False
+        with self.lock:
+            if not self.files.get(item["id"]):
+                return False
+            if len(self.photos) >= MAX_PHOTOS or sum(p["bytes"] for p in self.photos) + item["bytes"] > MAX_BATCH_BYTES:
+                return False
+            width, height, orientation, colorspace = metadata
+            self.photos.append({"name": item["name"], "path": item["path"], "bytes": item["bytes"],
+                                "width": width, "height": height, "orientation": orientation, "colorspace": colorspace})
+            self.photo_version += 1
+            return True
 
     def add_photo(self, data, metadata):
         width, height, orientation, colorspace = metadata
         with self.lock:
             if len(self.photos) >= MAX_PHOTOS:
-                raise ValueError(f"每批最多 {MAX_PHOTOS} 张照片，请在电脑上开始新批次")
+                raise ValueError(f"每次最多 {MAX_PHOTOS} 张照片，请重新打开电脑接收页后继续")
             if sum(photo["bytes"] for photo in self.photos) + len(data) > MAX_BATCH_BYTES:
                 raise ValueError("本批照片总量不能超过 150 MiB")
             folder = self.uploads_root / self.batch_name
@@ -97,12 +134,18 @@ class TransferState:
             self.photo_version += 1
             return self._photo_status()
 
-    def start_new_batch(self):
+    def start_new_batch(self, clear_text=False):
         with self.lock:
+            if clear_text:
+                self.text = ""
+                self.version += 1
             self.batch_name = self._new_batch_name()
             self.photos = []
             self.photo_version += 1
             self.pdf_version = 0
+            with self.pdf_workspace.lock:
+                self.files.new_batch()
+                self.pdf_workspace.reset()
             return self._photo_status()
 
     def make_pdf(self):
@@ -110,6 +153,7 @@ class TransferState:
             if not self.photos:
                 raise ValueError("请先从手机上传 JPG 照片")
             folder = self.uploads_root / self.batch_name
+            folder.mkdir(parents=True, exist_ok=True)
             path = folder / "photos.pdf"
             if self.pdf_version != self.photo_version or not path.is_file():
                 temporary = folder / "photos.pdf.part"
@@ -141,6 +185,18 @@ class TransferServer(ThreadingHTTPServer):
     def __init__(self, address, code, uploads_root=None):
         super().__init__(address, TransferHandler)
         self.state = TransferState(code, uploads_root or ROOT / "uploads")
+        self.connection = None
+        self.receiver_lifecycle = ReceiverLifecycle(
+            lambda: self.state.start_new_batch(clear_text=True), self.shutdown,
+        )
+
+    def server_close(self):
+        lifecycle = getattr(self, "receiver_lifecycle", None)
+        if lifecycle:
+            lifecycle.stopped.set()
+        if hasattr(self, 'state'):
+            self.state.pdf_workspace.close()
+        super().server_close()
 
 
 class TransferHandler(BaseHTTPRequestHandler):
@@ -165,12 +221,14 @@ class TransferHandler(BaseHTTPRequestHandler):
         data = (ROOT / name).read_bytes()
         self._send(200, data, "text/html; charset=utf-8")
 
-    def _file(self, path, content_type):
+    def _file(self, path, content_type, name=None, inline=False):
         size = path.stat().st_size
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(size))
-        self.send_header("Content-Disposition", f'attachment; filename="{path.name}"')
+        disposition = "inline" if inline else "attachment"
+        self.send_header("Content-Disposition", f"{disposition}; filename=\"download\"; filename*=UTF-8''{quote(name or path.name, safe='')}")
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
@@ -180,6 +238,64 @@ class TransferHandler(BaseHTTPRequestHandler):
 
     def _is_local(self):
         return is_loopback(self.client_address[0])
+
+    def _receiver_local(self):
+        origin = self.headers.get("Origin")
+        try:
+            target = urlsplit("http://" + self.headers.get("Host", ""))
+            valid_host = (target.hostname == "localhost" or is_loopback(target.hostname or "")) and target.port == self.server.server_port
+        except ValueError:
+            valid_host = False
+        if (not self._is_local() or not valid_host or self.headers.get("Sec-Fetch-Site") == "cross-site"
+                or (origin and urlsplit(origin).netloc != self.headers.get("Host"))):
+            self._json(403, {"error": "只能由电脑本机接收页控制服务"})
+            return False
+        return True
+
+    def _receiver_action(self, action):
+        if not self._receiver_local():
+            return
+        payload = self._read_json(1024)
+        if payload is None:
+            return
+        page_id = payload.get("page_id")
+        if not isinstance(page_id, str) or not re.fullmatch(r"[a-f0-9]{32}", page_id):
+            self._json(400, {"error": "无效的页面标识"})
+            return
+        lifecycle = self.server.receiver_lifecycle
+        if action == "open":
+            if not lifecycle.open(page_id):
+                self._json(409, {"error": "服务正在关闭，请重新启动 Local Connect"})
+                return
+        else:
+            lifecycle.close(page_id)
+        self._json(200, {"ok": True, "instance_id": lifecycle.instance_id})
+
+    def _receiver_stream(self):
+        if not self._receiver_local():
+            return
+        page_id = parse_qs(urlsplit(self.path).query).get("page_id", [""])[0]
+        lifecycle = self.server.receiver_lifecycle
+        stream_id = lifecycle.connect(page_id)
+        if stream_id is None:
+            self._json(404, {"error": "接收页尚未注册或服务正在关闭"})
+            return
+        try:
+            self.connection.settimeout(5)
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            while lifecycle.is_connected(page_id, stream_id) and not lifecycle.stopped.is_set():
+                self.wfile.write(b"event: heartbeat\ndata: {}\n\n")
+                self.wfile.flush()
+                if lifecycle.stopped.wait(2):
+                    break
+        except (OSError, ConnectionError):
+            pass
+        finally:
+            lifecycle.disconnect(page_id, stream_id)
 
     def _read_json(self, max_bytes):
         if self.headers.get_content_type() != "application/json":
@@ -207,6 +323,9 @@ class TransferHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/":
             self._page("phone.html")
+        elif path in ("/files-ui.js", "/files-ui.css", "/pdf-ui.js"):
+            mime = "text/javascript; charset=utf-8" if path.endswith(".js") else "text/css; charset=utf-8"
+            self._send(200, (ROOT / path[1:]).read_bytes(), mime)
         elif path == "/receiver":
             if not self._is_local():
                 self._json(403, {"error": "接收页只能在电脑本机打开"})
@@ -216,7 +335,72 @@ class TransferHandler(BaseHTTPRequestHandler):
             if not self._is_local():
                 self._json(403, {"error": "只能在电脑本机读取文本"})
                 return
-            self._json(200, self.server.state.latest())
+            self._json(200, {**self.server.state.latest(), "instance_id": self.server.receiver_lifecycle.instance_id})
+        elif path == "/api/receiver/events":
+            self._receiver_stream()
+        elif path == "/api/connect":
+            if not self._is_local():
+                self._json(403, {"error": "连接信息只能在电脑本机查看"})
+                return
+            connection = self.server.connection
+            details = connection.snapshot() if connection else {"mode": "manual", "code": self.server.state.code}
+            self._json(200, {**details, "phone_opened": self.server.state.phone_opened_status()})
+        elif path == "/api/connect/qr":
+            if not self._is_local():
+                self._json(403, {"error": "二维码只能在电脑本机查看"})
+                return
+            snapshot = self.server.connection.snapshot() if self.server.connection else {}
+            kind = urlsplit(self.path).query
+            value = snapshot.get("wifi_qr" if kind == "wifi" else "web_qr") if kind in ("wifi", "web") else None
+            if not value:
+                self._json(404, {"error": "当前二维码不可用"})
+                return
+            self._send(200, qr_svg(value), "image/svg+xml")
+        elif path.startswith("/api/exports/"):
+            if not self._receiver_local():
+                return
+            parts = path.removeprefix('/api/exports/').split('/')
+            job = self.server.state.pdf_workspace.get_job(parts[0], include_path=True)
+            if not job or len(parts) > 2 or (len(parts) == 2 and parts[1] != 'download'):
+                self._json(404, {'error': '下载记录已过期'})
+            elif len(parts) == 1:
+                self._json(200, {k: v for k, v in job.items() if k != 'path'})
+            elif job['state'] != 'ready':
+                self._json(409, {'error': job['message']})
+            else:
+                mime = 'application/zip' if job['name'].endswith('.zip') else 'application/pdf'
+                self._file(job['path'], mime, job['name'])
+        elif path.startswith("/api/files/"):
+            if not self._is_local():
+                self._json(403, {"error": "只能在电脑本机预览和下载文件"})
+                return
+            parts = path.removeprefix("/api/files/").split("/")
+            preview = len(parts) == 2 and parts[1] == "preview"
+            thumbnail = len(parts) == 2 and parts[1] == 'thumbnail'
+            item = self.server.state.files.get(parts[0]) if len(parts) == 1 or preview or thumbnail else None
+            if not item or (preview and not item["preview_type"]) or not item["path"].is_file():
+                self._json(404, {"error": "文件或预览不存在"})
+                return
+            if thumbnail:
+                if file_format(item['name']) not in IMAGE_FORMATS:
+                    self._json(404, {'error': '此文件没有图片缩略图'})
+                    return
+                target = self.server.state.uploads_root / '.thumbnails' / (item['id'] + '.png')
+                try:
+                    if not target.is_file():
+                        data = thumbnail_png(item['path'])
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        temporary = target.with_name(item['id'] + '-' + secrets.token_hex(6) + '.part')
+                        try:
+                            temporary.write_bytes(data)
+                            os.replace(temporary, target)
+                        finally:
+                            temporary.unlink(missing_ok=True)
+                    self._file(target, 'image/png', item['name'] + '.png', True)
+                except (OSError, ValueError):
+                    self._json(404, {'error': '无法读取图片缩略图'})
+                return
+            self._file(item["path"], item["preview_type"] if preview else "application/octet-stream", item["name"], preview)
         elif path == "/api/photos/pdf":
             if not self._is_local():
                 self._json(403, {"error": "只能在电脑本机下载 PDF"})
@@ -243,6 +427,32 @@ class TransferHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/send":
             self._receive_text()
+        elif path == "/api/connect/arrived":
+            payload = self._read_json(1024)
+            if payload is None:
+                return
+            code = payload.get("code")
+            if not isinstance(code, str) or not hmac.compare_digest(code.upper(), self.server.state.code):
+                self._json(403, {"error": "访问码无效"})
+                return
+            self.server.state.mark_phone_opened()
+            self._json(200, {"ok": True})
+        elif path in ("/api/receiver/open", "/api/receiver/close"):
+            self._receiver_action(path.rsplit("/", 1)[-1])
+        elif path == "/api/files":
+            self._receive_file()
+        elif path in ('/api/pdf-containers', '/api/exports'):
+            if not self._receiver_local():
+                return
+            payload = self._read_json(32 * 1024)
+            if payload is None:
+                return
+            try:
+                workspace = self.server.state.pdf_workspace
+                result = workspace.action(payload) if path == '/api/pdf-containers' else workspace.start_export(payload)
+                self._json(200, result)
+            except ValueError as error:
+                self._json(400, {'error': str(error)})
         elif path == "/api/photos":
             self._receive_photo()
         elif path == "/api/photos/pdf":
@@ -305,6 +515,37 @@ class TransferHandler(BaseHTTPRequestHandler):
             return
         self._json(200, {"ok": True, **status})
 
+    def _receive_file(self):
+        code = self.headers.get("X-Access-Code", "").strip().upper()
+        if not code.isascii() or not hmac.compare_digest(code, self.server.state.code):
+            self._json(403, {"error": "访问码不正确"})
+            return
+        if self.headers.get("Transfer-Encoding"):
+            self._json(400, {"error": "上传需要明确的文件长度"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            self._json(411, {"error": "缺少有效的文件长度"})
+            return
+        if length < 0 or length > MAX_FILE_BYTES:
+            self._json(413, {"error": "单个文件不能超过 2 GiB"})
+            return
+        try:
+            name = unquote(self.headers.get("X-File-Name", ""), encoding="utf-8", errors="strict")
+            if not name:
+                raise ValueError("请提供文件名")
+            self.connection.settimeout(120)
+            item = self.server.state.files.receive(self.rfile, length, name)
+        except (ValueError, UnicodeError) as error:
+            self._json(400, {"error": str(error)})
+            return
+        except OSError:
+            self._json(500, {"error": "上传中断或保存失败，请检查网络和电脑剩余空间后重试"})
+            return
+        pdf_included = self.server.state.include_file_in_pdf(item)
+        self._json(200, {"ok": True, "id": item["id"], "name": item["name"], "pdf_included": pdf_included})
+
     def _make_pdf(self):
         if not self._is_local():
             self._json(403, {"error": "只能在电脑本机生成 PDF"})
@@ -346,7 +587,7 @@ def detect_lan_ip():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local Connect：手机向电脑发送文本和照片")
+    parser = argparse.ArgumentParser(description="Local Connect：手机向电脑发送文本和文件")
     parser.add_argument("--port", type=int, default=8766, help="监听端口，默认 8766")
     parser.add_argument("--lan-ip", help="手动指定终端中显示的电脑局域网 IPv4 地址")
     args = parser.parse_args()
@@ -364,6 +605,8 @@ def main():
 
     port = server.server_address[1]
     lan_ip = args.lan_ip or detect_lan_ip()
+    server.connection = ConnectionManager(code, port, lan_ip)
+    connection = server.connection.snapshot()
     print(f"电脑接收页：http://localhost:{port}/receiver")
     if lan_ip:
         print(f"手机发送页：http://{lan_ip}:{port}/")
@@ -371,13 +614,27 @@ def main():
         print("未能自动找到局域网地址；请运行 ipconfig 查看 IPv4 地址。")
         print(f"手机发送页：http://<电脑的 IPv4 地址>:{port}/")
     print(f"本次访问码：{code}")
+    if connection["mode"] == "wifi":
+        print(f"Windows 热点已开启：{connection['ssid']}；请在电脑接收页扫描二维码。")
+    elif connection["mode"] == "web":
+        print("Windows 热点已有设备连接；请在电脑接收页扫描网页二维码。")
+    else:
+        if connection.get("reason") == "hotspot_address_missing":
+            print("热点已开启，但暂未取得热点 IPv4 地址；接收页会继续重试，并提供手动连接信息。")
+        else:
+            print("热点不可用，使用原有的手动网址和访问码方式。")
+            if connection.get("reason"):
+                print(f"热点诊断：{connection['reason']}")
     print("按 Ctrl+C 停止服务。", flush=True)
+    print("关闭所有电脑接收页约 8 秒后，服务和本次使用的热点会自动关闭。", flush=True)
+    server.receiver_lifecycle.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n服务已停止。")
     finally:
         server.server_close()
+        server.connection.close(stop_active_hotspot=server.receiver_lifecycle.closing)
 
 
 if __name__ == "__main__":

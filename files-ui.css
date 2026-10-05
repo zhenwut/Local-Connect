@@ -1,0 +1,189 @@
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; padding: 0; margin: 20px 0; list-style: none; }
+.file-card { position: relative; display: flex; flex-direction: column; min-height: 190px; height: 100%; box-sizing: border-box; color: #172c43; background: white; border: 1px solid #dce4ee; border-radius: 14px; overflow: hidden; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+.file-card:hover, .file-card:focus-visible { border-color: #1764be; box-shadow: 0 5px 18px #1764be18; outline: 2px solid transparent; }
+.file-card .file-icon { display: grid; place-items: center; flex: 1; padding: 24px 16px 12px; min-height: 90px; background: #f8fafc; }
+.file-icon svg { width: 60px; height: 70px; }
+.file-info { padding: 12px 14px; }
+.file-name { display: block; font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.file-size { display: block; font-size: 12px; color: #63758b; margin-top: 4px; }
+.file-preview { display: block; width: 100%; height: 180px; object-fit: contain; background: #f1f5f9; }
+.empty-files { padding: 30px 16px; border: 1px dashed #b9c8d8; border-radius: 12px; text-align: center; color: #63758b; background: #f8fafc; }
+.upload-queue { padding: 0; list-style: none; }
+.upload-row { margin-top: 10px; padding: 12px; border: 1px solid #dce4ee; border-radius: 10px; background: #f8fafc; }
+.upload-row strong { display: block; overflow-wrap: anywhere; font-size: 14px; }
+.upload-row small { display: block; color: #63758b; margin-top: 4px; }
+.upload-row progress { display: block; width: 100%; height: 7px; margin-top: 8px; accent-color: #1764be; }
+.character-count { color: #63758b; font-size: 13px; margin: 6px 0 0; }
+.upload-row .remove-file { font-size: 12px; padding: 4px 10px; margin-top: 8px; background: #e6edf5; color: #34516d; }
+.upload-row[data-state="done"] { border-color: #a3d5b7; background: #f3faf5; }
+.upload-row[data-state="error"] { border-color: #e7a7a7; background: #fff6f6; }
+@media (max-width: 440px) { .file-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .file-preview { height: 140px; } }
+.files-workspace { margin-top: 24px; padding: 20px; border: 1px solid #dce3ec; border-radius: 16px; background: #f9fbfe; }
+.files-workspace.drag-return { outline: 3px dashed #1764be; outline-offset: 3px; }
+.files-toolbar, .files-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.files-toolbar h2 { margin: 0; }
+.files-workspace button { cursor: pointer; margin: 0; }
+.files-workspace button:disabled { cursor: default; }
+.files-footer { margin-top: 20px; padding-top: 16px; border-top: 1px solid #dde5ef; }
+.files-footer button { margin-left: auto; }
+#files-total, #files-folder, #pdf-support { color: #657389; font-size: 13px; overflow-wrap: anywhere; }
+#files-status { min-height: 1.5em; margin: 12px 0 0; font-size: 14px; }
+.file-item { position: relative; min-width: 0; }
+.file-item.selected .file-card { outline: 2px solid #397bc9; }
+.file-select { position: absolute; top: 10px; left: 10px; width: 18px; height: 18px; accent-color: #1764be; cursor: pointer; }
+.file-card[draggable=true], .pdf-member[draggable=true] { cursor: grab; }
+.pdf-container { display: flex; flex-direction: column; border: 2px dashed #a4bddb; border-radius: 14px; min-width: 0; background: #f1f6ff; overflow: hidden; }
+.pdf-container.drag-over { border-color: #1764be; background: #dceaff; box-shadow: 0 0 0 3px #1764be20; }
+.pdf-header { display: flex; align-items: center; gap: 4px; padding: 10px 10px 0; }
+.pdf-select { flex: 0 0 auto; width: 18px; height: 18px; accent-color: #1764be; cursor: pointer; }
+.pdf-container.selected { border-color: #1764be; box-shadow: 0 0 0 1px #1764be; }
+.pdf-header .pdf-name { flex: 1; min-width: 0; text-align: left; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-header .pdf-name, .pdf-header .pdf-close, .pdf-member .pdf-remove-file { background: transparent; color: #284668; padding: 4px 6px; }
+.pdf-header .pdf-close { font-size: 24px; line-height: 1; margin: 0; }
+.pdf-header .pdf-close:hover, .pdf-member .pdf-remove-file:hover { background: #dce7f5; }
+.pdf-rename { width: 100%; min-width: 0; padding: 5px; font: inherit; box-sizing: border-box; border: 1px solid #1764be; border-radius: 4px; }
+.pdf-body { margin-top: auto; padding: 22px 12px 14px; cursor: pointer; text-align: center; }
+.pdf-container.has-members .pdf-body { padding: 9px 12px; border-top: 1px solid #dce6f2; background: #eaf2ff; color: #1764be; font-size: 13px; font-weight: 600; }
+.pdf-container.has-members .pdf-body:hover { background: #dceaff; }
+.pdf-download-label { display: block; }
+.pdf-body:focus-visible { outline: 2px solid #1764be; outline-offset: -4px; }
+.pdf-badge { display: inline-block; background: #d64451; color: white; font-weight: 700; border-radius: 6px; padding: 7px 12px; }
+.pdf-summary { margin: 12px 0 4px; font-size: 14px; font-weight: 600; }
+.pdf-hint { color: #647791; font-size: 12px; margin: 0; }
+.pdf-members { list-style: none; padding: 0 10px 10px; margin: 0; max-height: 180px; overflow-y: auto; }
+.pdf-member { display: flex; align-items: center; gap: 4px; padding: 4px 0; border-top: 1px solid #dce6f2; font-size: 12px; }
+.pdf-member span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-member .pdf-remove-file { margin: 0; }
+.pdf-member .pdf-position { flex: 0 0 auto; color: #6a7a91; font-size: 11px; }
+.pdf-member.drag-over { outline: 2px solid #1764be; outline-offset: -2px; background: #e1eeff; }
+.pdf-members.image-members { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 320px; }
+.image-members .pdf-member { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; padding: 5px; border: 1px solid #dce6f2; border-radius: 9px; background: white; }
+.image-members .pdf-thumbnail { grid-column: 1 / -1; position: relative; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border-radius: 6px; background: #eaf0f8; }
+.image-members .pdf-thumbnail img { display: block; width: 100%; height: 100%; object-fit: contain; transition: transform .18s ease; }
+.image-members .pdf-thumbnail.thumbnail-error { color: #697a90; font-size: 11px; }
+.image-members .pdf-rotate { position: absolute; right: 3px; bottom: 3px; z-index: 1; width: 28px; height: 28px; padding: 0; border: 1px solid #b6c5d8; border-radius: 50%; background: #fff; color: #1764be; font-size: 21px; line-height: 1; box-shadow: 0 1px 5px #10203025; }
+.image-members .pdf-rotate:hover { background: #dceaff; }
+.image-members .pdf-member > span:not(.pdf-position) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.image-members .pdf-member .pdf-remove-file { padding: 0 4px; line-height: 1; }
+@media (max-width: 480px) { .files-workspace { padding: 12px; } .files-footer { align-items: flex-end; } }
+
+/* Shared visual system for the receiver and phone. */
+:root {
+  color-scheme: light;
+  --page: #f5f8fc;
+  --surface: #fff;
+  --surface-soft: #f8fafd;
+  --text: #182c43;
+  --text-muted: #556980;
+  --border: #d8e3ef;
+  --accent: #1764be;
+  --accent-deep: #124d91;
+  --accent-soft: #91b9e5;
+  --accent-wash: #f0f6ff;
+  --accent-wash-hover: #e5f0ff;
+  --focus: #1764be;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-soft: 0 10px 35px #1b477b0a;
+}
+* { box-sizing: border-box; }
+html { background: var(--page); }
+body { min-width: 0; font: 16px/1.55 system-ui, "Microsoft YaHei", sans-serif; color: var(--text); background: linear-gradient(180deg, #edf4fc 0, var(--page) 370px); }
+h1, h2, p { overflow-wrap: anywhere; }
+h1, h2 { line-height: 1.22; }
+h2 { font-size: 21px; letter-spacing: -.02em; }
+button { min-height: 42px; padding: 9px 16px; border: 1px solid var(--accent); border-radius: 10px; color: #fff; background: var(--accent); font-weight: 650; cursor: pointer; transition: background .18s, box-shadow .18s, transform .18s, border-color .18s; }
+button:hover:not(:disabled) { background: var(--accent-deep); border-color: var(--accent-deep); box-shadow: 0 5px 14px #1764be27; transform: translateY(-1px); }
+button:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+input:not([type="checkbox"]):not([type="file"]), textarea { width: 100%; padding: 11px 13px; border: 1px solid #aabbd0; border-radius: var(--radius-sm); color: var(--text); background: var(--surface); transition: border-color .18s, box-shadow .18s; }
+input:not([type="checkbox"]):not([type="file"]):focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #1764be24; outline: none; }
+:is(button, a, input, textarea, [role="button"]):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+[hidden] { display: none !important; }
+
+.app-header { margin: 0 0 14px; }
+.app-brand { display: flex; align-items: center; gap: 10px; color: var(--accent-deep); font-size: 14px; font-weight: 750; letter-spacing: .015em; }
+.brand-mark { position: relative; width: 28px; height: 28px; border-radius: 9px; background: var(--accent); box-shadow: 0 3px 9px #1764be30; }
+.brand-mark::before, .brand-mark::after { content: ''; position: absolute; width: 10px; height: 7px; border: 2px solid white; border-radius: 3px; transform: rotate(-23deg); }
+.brand-mark::before { top: 7px; left: 5px; }
+.brand-mark::after { right: 5px; bottom: 6px; }
+.brand-context { margin-left: 2px; padding-left: 12px; border-left: 1px solid var(--accent-soft); color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.app-header h1 { margin: 14px 0 5px; font-size: clamp(27px, 3vw, 34px); letter-spacing: -.045em; }
+.app-header p { margin: 0; color: var(--text-muted); }
+.session-note { display: inline-block; max-width: 100%; margin: 4px 0 0; padding: 10px 14px; border: 1px solid #e0e8f2; border-radius: var(--radius-sm); background: #ffffffb8; color: var(--text-muted); font-size: 13px; }
+.character-count, .helper-text { color: var(--text-muted); font-size: 13px; }
+.helper-text { margin: 11px 0 0 !important; line-height: 1.6; }
+
+.file-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.file-item, .pdf-container, .upload-row { animation: settle-in .28s ease-out both; }
+.file-card { min-height: 188px; border-color: var(--border); border-radius: var(--radius-md); color: var(--text); transition: border-color .18s, box-shadow .18s, transform .18s; }
+.file-card:hover, .file-card:focus-visible { border-color: var(--accent-soft); box-shadow: 0 9px 24px #234c7d1a; transform: translateY(-2px); }
+.file-card .file-icon { min-height: 94px; background: var(--surface-soft); }
+.file-icon svg { width: 57px; height: 66px; }
+.file-info { padding: 12px 14px 15px; }
+.file-name { color: var(--text); font-weight: 700; line-height: 1.4; }
+.file-size { color: var(--text-muted); }
+.file-preview { height: 178px; background: var(--surface-soft); }
+.file-card.has-preview .file-preview { flex: 1 1 178px; min-height: 178px; object-fit: cover; }
+.file-select, .pdf-select { box-sizing: border-box; appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 22px; height: 22px; margin: 0; border: 1.5px solid #7992ad; border-radius: 6px; background: #fff; box-shadow: none; cursor: pointer; transition: background-color .18s, border-color .18s; }
+.file-select:checked, .pdf-select:checked { border-color: var(--accent); background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='m4 10 4 4 8-8'/%3E%3C/svg%3E") center / 16px 16px no-repeat; }
+.file-select:focus-visible, .pdf-select:focus-visible { outline: 3px solid #1764be66; outline-offset: 2px; }
+.file-item .file-select { position: absolute; z-index: 2; top: 10px; left: 10px; width: 24px; height: 24px; }
+.file-item.selected .file-card { border-color: var(--accent); box-shadow: 0 0 0 2px #1764be33; }
+.empty-files { padding: 36px 18px; border: 1.5px dashed #aebfd3; border-radius: var(--radius-md); color: var(--text-muted); background: var(--surface-soft); }
+
+.files-workspace { padding: 24px; border-color: var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-soft); }
+.files-workspace.drag-return { outline-color: var(--accent); }
+.files-workspace > p { color: var(--text-muted); font-size: 14px; }
+.files-toolbar button { color: var(--accent-deep); background: var(--accent-wash); border-color: #b7d2f0; }
+.files-toolbar button:hover:not(:disabled) { background: var(--accent-wash-hover); border-color: var(--accent); }
+.files-footer { margin-top: 22px; padding-top: 18px; border-color: var(--border); }
+#files-total, #files-folder, #pdf-support { color: var(--text-muted); }
+#files-status { color: var(--accent-deep); }
+
+.upload-queue { margin: 12px 0 0; }
+.upload-row { padding: 13px 14px; border-color: var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.upload-row strong { font-weight: 700; }
+.upload-row small { color: var(--text-muted); }
+.upload-row progress { height: 8px; accent-color: var(--accent); }
+.upload-row .remove-file { min-height: 32px; border: 1px solid var(--border); color: var(--text-muted); background: #edf2f8; }
+.upload-row .remove-file:hover:not(:disabled) { color: var(--text); background: #e1e9f3; border-color: #bfd0e0; }
+.upload-row[data-state="done"] { border-color: #a6d6bc; background: #f2faf5; }
+.upload-row[data-state="error"] { border-color: #e4a9ad; background: #fff5f5; }
+
+.pdf-container { border-width: 1.5px; border-color: var(--accent-soft); border-radius: var(--radius-md); background: var(--accent-wash); }
+.pdf-container.drag-over { border-color: var(--accent); background: #deecff; }
+.pdf-container.selected { border-color: var(--accent); box-shadow: 0 0 0 2px #1764be33; }
+.pdf-header { gap: 8px; padding: 9px 9px 0; }
+.pdf-header .pdf-name { padding: 6px 3px; color: var(--text); border: 0; font-weight: 700; }
+.pdf-header .pdf-name:hover:not(:disabled) { color: var(--accent-deep); background: transparent; border: 0; box-shadow: none; }
+.pdf-header .pdf-close, .pdf-member .pdf-remove-file { flex: 0 0 auto; min-width: 34px; min-height: 34px; padding: 0; border: 0; color: var(--text-muted); background: transparent; box-shadow: none; }
+.pdf-header .pdf-close:hover:not(:disabled), .pdf-member .pdf-remove-file:hover:not(:disabled) { color: #a72436; background: #fce9eb; border: 0; box-shadow: none; }
+.pdf-rename { padding: 6px 7px; }
+.pdf-container.has-members .pdf-body { border-color: #cbdcf0; color: var(--accent-deep); background: #e5f0ff; font-weight: 700; }
+.pdf-container.has-members .pdf-body:hover { background: #d8e9ff; }
+.pdf-body:focus-visible { outline: 3px solid var(--focus); }
+.pdf-badge { background: #bf4250; }
+.pdf-hint, .pdf-member .pdf-position { color: var(--text-muted); }
+.pdf-members { max-height: 190px; }
+.pdf-member { border-color: #d7e5f5; }
+.pdf-member.drag-over { outline-color: var(--accent); background: #dceaff; }
+.image-members .pdf-member { border-color: var(--border); }
+.image-members .pdf-thumbnail { background: #edf2f8; }
+.image-members .pdf-rotate { right: 4px; bottom: 4px; width: 32px; height: 32px; min-height: 32px; border-color: #a7bdd5; color: var(--accent-deep); background: var(--surface); }
+.image-members .pdf-rotate:hover:not(:disabled) { color: var(--accent-deep); background: var(--accent-wash-hover); border-color: var(--accent-soft); }
+
+@keyframes settle-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 480px) {
+  .files-workspace { padding: 18px; }
+  .file-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .file-grid .pdf-container.has-members { grid-column: 1 / -1; }
+  .file-preview { height: 140px; }
+  .app-header h1 { font-size: 27px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-item, .pdf-container, .upload-row { animation: none; }
+  button, .file-card, .file-picker, .image-members .pdf-thumbnail img { transition-duration: .01ms !important; }
+  button:hover:not(:disabled), .file-card:hover, .file-picker:hover { transform: none; }
+}
