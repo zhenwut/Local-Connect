@@ -189,6 +189,7 @@ class PdfWorkspace:
             return dict(job)
 
     def _export(self, job, epoch, files, containers, is_zip):
+        zip_path = None
         try:
             folder = self.files.root / ('exports-' + epoch)
             folder.mkdir(parents=True, exist_ok=True)
@@ -203,32 +204,47 @@ class PdfWorkspace:
                 path = folder / (signature + '.pdf')
                 if not path.is_file():
                     part = path.with_suffix('.part')
+                    quota = self.files.quota
+                    ticket = quota.reserve(max(1024 * 1024, 2 * sum(files[i]['bytes'] for i in container['file_ids']) + 1024 * 1024)) if quota else None
                     try:
                         convert([files[i] for i in container['file_ids']], part, cancel=self.stopped,
                                 rotations=container['rotations'])
+                        if quota:
+                            quota.check(ticket)
                         part.replace(path)
                     finally:
                         part.unlink(missing_ok=True)
+                        if quota:
+                            quota.release(ticket)
                 entries.append((safe_name(container['name'] + '.pdf'), path))
                 grouped.update(container['file_ids'])
             if is_zip:
                 entries.extend((f['name'], f['path']) for key, f in files.items() if key not in grouped)
                 path = folder / (job['id'] + '.zip')
+                zip_path = path
                 used = set()
                 job['message'] = '正在打包文件…'
-                with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-                    for name, source in entries:
-                        original = Path(name)
-                        number = 1
-                        while name.casefold() in used:
-                            number += 1
-                            name = f'{original.stem} ({number}){original.suffix}'
-                        used.add(name.casefold())
-                        with source.open('rb') as content, archive.open(name, 'w', force_zip64=True) as entry:
-                            while chunk := content.read(1024 * 1024):
-                                if self.stopped.is_set():
-                                    raise ValueError('服务已关闭，打包已取消')
-                                entry.write(chunk)
+                quota = self.files.quota
+                ticket = quota.reserve(sum(source.stat().st_size for _, source in entries) + max(1024 * 1024, len(entries) * 1024)) if quota else None
+                try:
+                    with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                        for name, source in entries:
+                            original = Path(name)
+                            number = 1
+                            while name.casefold() in used:
+                                number += 1
+                                name = f'{original.stem} ({number}){original.suffix}'
+                            used.add(name.casefold())
+                            with source.open('rb') as content, archive.open(name, 'w', force_zip64=True) as entry:
+                                while chunk := content.read(1024 * 1024):
+                                    if self.stopped.is_set():
+                                        raise ValueError('服务已关闭，打包已取消')
+                                    entry.write(chunk)
+                    if quota:
+                        quota.check(ticket)
+                finally:
+                    if quota:
+                        quota.release(ticket)
             else:
                 path = entries[0][1]
             with self.lock:
@@ -236,6 +252,11 @@ class PdfWorkspace:
                     job.update(state='ready', path=path, bytes=path.stat().st_size,
                                download_url=f'/api/exports/{job["id"]}/download', message='下载已准备好')
         except Exception as error:
+            if zip_path is not None:
+                try:
+                    zip_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             job.update(state='error', message=str(error) or '转换失败，请检查文件和磁盘空间')
         finally:
             self.conversion_lock.release()

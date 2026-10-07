@@ -31,9 +31,10 @@ def category(name):
         "image": "jpg jpeg jfif png gif webp avif bmp ico svg heic heif tif tiff raw dng psd",
         "audio": "mp3 wav aac m4a flac ogg opus wma aiff amr",
         "video": "mp4 mov mkv avi webm m4v mpeg mpg 3gp ts wmv flv",
-        "pdf": "pdf", "word": "doc docx odt rtf", "excel": "xls xlsx xlsm csv ods",
-        "slides": "ppt pptx odp", "archive": "zip rar 7z gz tar bz2 xz",
-        "text": "txt md log json xml yaml yml html css js py",
+        "pdf": "pdf", "word": "doc docx odt rtf", "excel": "xls xlsx xlsm ods",
+        "csv": "csv tsv", "ebook": "epub mobi azw azw3 fb2",
+        "slides": "ppt pptx odp", "archive": "zip rar 7z gz tar tgz bz2 xz zst",
+        "text": "txt md log json xml yaml yml html css js py ini cfg toml rst srt vtt",
     }
     return next((key for key, extensions in groups.items() if extension in extensions.split()), "file")
 
@@ -55,8 +56,9 @@ def image_type(header):
 
 
 class FileStore:
-    def __init__(self, root):
+    def __init__(self, root, quota=None):
         self.root = Path(root)
+        self.quota = quota
         self.lock = threading.Lock()
         self.batch = "files-" + secrets.token_hex(8)
         self.files = {}
@@ -85,6 +87,7 @@ class FileStore:
             raise ValueError("单个文件不能超过 2 GiB")
         name = safe_name(name)
         file_id = secrets.token_hex(16)
+        ticket = None
         with self.lock:
             batch = self.batch
             pending = [size for owner, size in self.pending.values() if owner == batch]
@@ -92,6 +95,8 @@ class FileStore:
                 raise ValueError("每次最多 100 个文件，请重新打开电脑接收页后继续")
             if sum(item["bytes"] for item in self.files.values()) + sum(pending) + length > MAX_FILES_BYTES:
                 raise ValueError("每批文件总量不能超过 10 GiB")
+            if self.quota:
+                ticket = self.quota.reserve(length)
             self.pending[file_id] = (batch, length)
         folder = self.root / batch / file_id
         path = folder / name
@@ -119,15 +124,21 @@ class FileStore:
             with self.lock:
                 if batch != self.batch:
                     raise ValueError("电脑已开始新批次，请重新上传此文件")
+                if self.quota:
+                    self.quota.check(ticket)
                 os.replace(temporary, path)
                 self.files[file_id] = item
                 self.version += 1
                 committed = True
             return item.copy()
         finally:
-            with self.lock:
-                self.pending.pop(file_id, None)
-            if not committed:
-                temporary.unlink(missing_ok=True)
-                if folder.exists():
-                    folder.rmdir()
+            try:
+                with self.lock:
+                    self.pending.pop(file_id, None)
+                if not committed:
+                    temporary.unlink(missing_ok=True)
+                    if folder.exists():
+                        folder.rmdir()
+            finally:
+                if self.quota:
+                    self.quota.release(ticket)

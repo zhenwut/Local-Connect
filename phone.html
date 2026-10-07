@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Local Connect · 手机发送页</title>
   <link rel="stylesheet" href="/files-ui.css">
+  <script src="/i18n.js"></script>
   <script src="/files-ui.js"></script>
   <style>
     body { max-width: 680px; margin: 0 auto; padding: 24px 16px 56px; }
@@ -34,9 +35,9 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Local Connect</span><span class="brand-context">手机发送</span></div>
+    <div class="header-row"><div class="app-brand"><span>Local Connect</span><span class="brand-context">手机发送</span></div><button id="language-toggle" class="language-toggle" type="button">EN</button></div>
     <h1>发送到电脑</h1>
-    <p>同一网络下，文字和文件可以直接送到电脑。</p>
+    <p>连接电脑热点后，文字和文件可以直接送到电脑。</p>
   </header>
   <main>
   <div id="manual-code">
@@ -45,11 +46,11 @@
   </div>
   <section class="phone-panel" aria-labelledby="upload-title">
     <h2 id="upload-title">上传文件</h2>
-    <p>图片、视频、文档等格式都可发送；选择后自动上传。</p>
+    <p>TXT、CSV、EPUB、图片、视频等任意格式均可传输；选择后自动上传。</p>
     <input id="photos" type="file" multiple aria-describedby="file-help">
     <label class="file-picker" for="photos"><span class="picker-icon" aria-hidden="true">↑</span><strong>选择文件上传</strong><small>可一次多选，也可分几次添加</small></label>
     <p id="file-help" class="helper-text">单个文件最多 2 GiB；每批最多 100 个，合计 10 GiB。手机文件管理器通常可长按多选。</p>
-    <ul id="upload-queue" class="upload-queue" aria-label="上传队列"></ul>
+    <ul id="upload-queue" class="upload-queue" aria-label="上传队列" data-i18n-user-content></ul>
     <button id="retry-upload" type="button" hidden>重试未完成的文件</button>
     <p id="photo-status" role="status" aria-live="polite"></p>
   </section>
@@ -64,6 +65,8 @@
   </form>
   </main>
   <script>
+    LocalI18n.init();
+    const t = LocalI18n.t;
     const codeInput = document.getElementById("code");
     const scannedCode = new URLSearchParams(location.hash.slice(1)).get("code");
     if (scannedCode && /^[A-HJ-NP-Z2-9]{8}$/.test(scannedCode)) {
@@ -87,10 +90,18 @@
     const photoInput = document.getElementById("photos");
     const retryButton = document.getElementById("retry-upload");
     const photoStatus = document.getElementById("photo-status");
+    let textMessage = ["", {}];
+    let uploadMessage = ["", {}];
+    const showTextStatus = (key, values = {}) => { textMessage = [key, values]; status.textContent = t(key, values); };
+    const renderUploadStatus = () => {
+      const [key, values] = uploadMessage;
+      photoStatus.textContent = t(key, {...values, error: values.error ? t(values.error) : ''});
+    };
+    const showUploadStatus = (key, values = {}) => { uploadMessage = [key, values]; renderUploadStatus(); };
     const queueList = document.getElementById("upload-queue");
     const textInput = document.getElementById("text");
     const updateTextCount = () => {
-      document.getElementById("text-count").textContent = `${LocalFiles.characterCount(textInput.value).toLocaleString("zh-CN")} 字符`;
+      document.getElementById("text-count").textContent = t("{count} 字符", {count: LocalFiles.characterCount(textInput.value).toLocaleString(LocalI18n.language === "en" ? "en-US" : "zh-CN")});
     };
     textInput.addEventListener("input", updateTextCount);
     updateTextCount();
@@ -99,9 +110,10 @@
     function updateQueueSummary() {
       const count = queue.filter(item => !item.done).length;
       if (!uploading && !retryButton.hidden && count) {
-        photoStatus.textContent = `${count} 个文件未完成；请检查连接后点击重试，或移除无法上传的文件。`;
+        showUploadStatus("{count} 个文件未完成；请检查连接后点击重试，或移除无法上传的文件。", {count});
       } else if (!uploading && count) {
-        photoStatus.textContent = codeInput.value.trim() ? `${count} 个文件等待自动上传…` : "请先填写访问码，文件会自动上传。";
+        if (codeInput.value.trim()) showUploadStatus("{count} 个文件等待自动上传…", {count});
+        else showUploadStatus("请先填写访问码，文件会自动上传。");
       }
     }
     photoInput.addEventListener("change", () => {
@@ -112,17 +124,17 @@
         const name = document.createElement("strong");
         name.textContent = file.name;
         const detail = document.createElement("small");
-        detail.textContent = `${LocalFiles.formatSize(file.size)} · 等待上传`;
+        detail.textContent = t("{size} · 等待上传", {size: LocalFiles.formatSize(file.size)});
         const progress = document.createElement("progress");
         progress.max = 100;
         progress.value = 0;
-        progress.setAttribute("aria-label", `${file.name} 上传进度`);
+        progress.setAttribute("aria-label", t("{name} 上传进度", {name: file.name}));
         const item = { file, row, detail, progress, done: false };
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "remove-file";
-        remove.textContent = "移除";
-        remove.setAttribute("aria-label", `从队列移除 ${file.name}`);
+        remove.textContent = t("移除");
+        remove.setAttribute("aria-label", t("从队列移除 {name}", {name: file.name}));
         remove.addEventListener("click", () => {
           if (item.uploading || item.done) return;
           queue = queue.filter(entry => entry !== item);
@@ -154,7 +166,7 @@
           if (!event.lengthComputable) return;
           const percent = Math.round(event.loaded * 100 / event.total);
           item.progress.value = percent;
-          item.detail.textContent = `${LocalFiles.formatSize(item.file.size)} · ${percent === 100 ? "正在保存…" : percent + "%"}`;
+          item.detail.textContent = percent === 100 ? t("{size} · 正在保存…", {size: LocalFiles.formatSize(item.file.size)}) : `${LocalFiles.formatSize(item.file.size)} · ${percent}%`;
         });
         request.addEventListener("load", () => {
           showCodeInputIfExpired(request);
@@ -174,11 +186,11 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (new TextEncoder().encode(textInput.value).length > 65536) {
-        status.textContent = "文本超过 64 KiB，请缩短后再发送。";
+        showTextStatus("文本超过 64 KiB，请缩短后再发送。");
         return;
       }
       button.disabled = true;
-      status.textContent = "正在发送…";
+      showTextStatus("正在发送…");
       try {
         const response = await fetch("/api/send", {
           method: "POST",
@@ -190,9 +202,9 @@
         });
         const result = await response.json();
         showCodeInputIfExpired(response);
-        status.textContent = response.ok ? "发送成功，电脑接收页已更新。" : result.error;
+        showTextStatus(response.ok ? "发送成功，电脑接收页已更新。" : result.error);
       } catch {
-        status.textContent = "连接失败，请检查电脑服务和 Wi-Fi 连接。";
+        showTextStatus("连接失败，请检查电脑服务和 Wi-Fi 连接。");
       } finally {
         button.disabled = false;
       }
@@ -202,21 +214,21 @@
       const pending = queue.filter(item => !item.done);
       if (!pending.length) return;
       if (!codeInput.value.trim()) {
-        photoStatus.textContent = "请先填写访问码。";
+        showUploadStatus("请先填写访问码。");
         return;
       }
       if (pending.length > 100) {
-        photoStatus.textContent = "一次最多选择 100 个文件。";
+        showUploadStatus("一次最多选择 100 个文件。");
         retryButton.hidden = false;
         return;
       }
       if (pending.some(item => item.file.size > 2 * 1024 ** 3)) {
-        photoStatus.textContent = "单个文件不能超过 2 GiB。";
+        showUploadStatus("单个文件不能超过 2 GiB。");
         retryButton.hidden = false;
         return;
       }
       if (pending.reduce((sum, item) => sum + item.file.size, 0) > 10 * 1024 ** 3) {
-        photoStatus.textContent = "每批文件总量不能超过 10 GiB。";
+        showUploadStatus("每批文件总量不能超过 10 GiB。");
         retryButton.hidden = false;
         return;
       }
@@ -231,30 +243,44 @@
           current = item;
           item.uploading = true;
           item.row.dataset.state = "uploading";
-          photoStatus.textContent = `正在上传：${item.file.name}（本轮第 ${sent + 1} 个）`;
+          showUploadStatus("正在上传：{name}（本轮第 {number} 个）", {name: item.file.name, number: sent + 1});
           await uploadFile(item);
           item.done = true;
           item.uploading = false;
           item.row.dataset.state = "done";
           item.progress.value = 100;
-          item.detail.textContent = `${LocalFiles.formatSize(item.file.size)} · 已完成`;
+          item.detail.textContent = t("{size} · 已完成", {size: LocalFiles.formatSize(item.file.size)});
           item.row.querySelector(".remove-file").hidden = true;
           sent += 1;
         }
-        photoStatus.textContent = `已上传 ${sent} 个文件，请在电脑接收页查看。`;
+        showUploadStatus("已上传 {count} 个文件，请在电脑接收页查看。", {count: sent});
       } catch (error) {
         if (current && !current.done) {
           current.uploading = false;
           current.row.dataset.state = "error";
-          current.detail.textContent = error.message;
+          current.detail.textContent = t(error.message);
+          current.error = error.message;
         }
-        photoStatus.textContent = `本轮已上传 ${sent} 个；${error.message || "连接中断"}。检查后可重试未完成的文件。`;
+        showUploadStatus("本轮已上传 {count} 个；{error}。检查后可重试未完成的文件。", {count: sent, error: error.message || "连接中断"});
         retryButton.hidden = false;
       } finally {
         uploading = false;
       }
     }
     retryButton.addEventListener("click", startUpload);
+    window.addEventListener("languagechange", () => {
+      updateTextCount(); updateQueueSummary();
+      status.textContent = t(...textMessage);
+      renderUploadStatus();
+      for (const item of queue) {
+        item.row.querySelector(".remove-file").textContent = t("移除");
+        item.progress.setAttribute("aria-label", t("{name} 上传进度", {name: item.file.name}));
+        item.row.querySelector(".remove-file").setAttribute("aria-label", t("从队列移除 {name}", {name: item.file.name}));
+        if (item.done) item.detail.textContent = t("{size} · 已完成", {size: LocalFiles.formatSize(item.file.size)});
+        else if (item.error) item.detail.textContent = t(item.error);
+        else if (!item.uploading) item.detail.textContent = t("{size} · 等待上传", {size: LocalFiles.formatSize(item.file.size)});
+      }
+    });
   </script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 /* Receiver-only PDF workspace. All names are rendered as text. */
 window.PdfFiles = (() => {
+  const t = LocalI18n.t;
   const list = document.getElementById('file-list');
   const workspace = document.querySelector('.files-workspace');
   const addButton = document.getElementById('add-pdf');
@@ -23,15 +24,17 @@ window.PdfFiles = (() => {
     const count = selected.size + selectedContainers.size;
     const totalBytes = snapshot.files.reduce((sum, file) => sum + file.bytes, 0);
     const chosenBytes = snapshot.files.reduce((sum, file) => sum + (included.has(file.id) ? file.bytes : 0), 0);
-    document.getElementById('files-total').textContent = `${snapshot.files.length} 个原文件 · 总大小 ${LocalFiles.formatSize(totalBytes)}`
-      + (count ? ` · 已选 ${count} 项（原文件 ${LocalFiles.formatSize(chosenBytes)}）` : '');
-    allButton.textContent = count ? `下载选中（${count} 项）ZIP ↓` : '一键下载 ZIP ↓';
+    document.getElementById('files-total').textContent = t('{count} 个原文件 · 总大小 {size}', {count: snapshot.files.length, size: LocalFiles.formatSize(totalBytes)})
+      + (count ? t(' · 已选 {count} 项（原文件 {size}）', {count, size: LocalFiles.formatSize(chosenBytes)}) : '');
+    allButton.textContent = count ? t('下载选中（{count} 项）ZIP ↓', {count}) : t('一键下载 ZIP ↓');
     allButton.disabled = busy || !snapshot.files.length;
   }
   async function request(url, payload) {
-    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const token = await window.getReceiverToken();
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, receiver_token: token }) });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '操作失败，请重试');
+    if (!response.ok) throw new Error(t(data.error || '操作失败，请重试'));
     return data;
   }
   async function action(payload) {
@@ -39,7 +42,7 @@ window.PdfFiles = (() => {
       const result = await request('/api/pdf-containers', payload);
       version = '';
       update({ ...snapshot, ...result });
-      tell(payload.action === 'delete' ? '已移除容器，文件已放回列表。' : '');
+      tell(payload.action === 'delete' ? t('已移除容器，文件已放回列表。') : '');
     } catch (error) { tell(error.message); }
   }
   function dragSource(node, file, fromContainer = false) {
@@ -77,14 +80,14 @@ window.PdfFiles = (() => {
       dragging = false;
       workspace.classList.remove('drag-return');
       node.classList.remove('drag-over');
-      try { callback(JSON.parse(raw)); } catch { tell('拖入失败，请重试'); }
+      try { callback(JSON.parse(raw)); } catch { tell(t('拖入失败，请重试')); }
     });
   }
   function rename(container, button) {
     const input = element('input', 'pdf-rename');
     input.value = container.name;
     input.maxLength = 80;
-    input.setAttribute('aria-label', 'PDF 文件名');
+    input.setAttribute('aria-label', t('PDF 文件名'));
     let finished = false;
     const finish = save => {
       if (finished) return;
@@ -110,8 +113,8 @@ window.PdfFiles = (() => {
     const select = element('input', 'pdf-select'); select.type = 'checkbox';
     select.disabled = !container.file_ids.length;
     select.checked = selectedContainers.has(container.id);
-    select.setAttribute('aria-label', `选择 ${container.name}.pdf`);
-    select.title = '勾选此 PDF，加入选中项下载';
+    select.setAttribute('aria-label', t('选择 {name}', {name: `${container.name}.pdf`}));
+    select.title = t('勾选此 PDF，加入选中项下载');
     select.addEventListener('change', () => {
       if (select.checked) selectedContainers.add(container.id); else selectedContainers.delete(container.id);
       item.classList.toggle('selected', select.checked);
@@ -119,24 +122,24 @@ window.PdfFiles = (() => {
     });
     item.classList.toggle('selected', select.checked);
     const name = element('button', 'pdf-name', container.name);
-    name.type = 'button'; name.title = '单击重命名 PDF';
+    name.type = 'button'; name.title = t('单击重命名 PDF');
     name.addEventListener('click', event => { event.stopPropagation(); rename(container, name); });
     const close = element('button', 'pdf-close', '×');
-    close.type = 'button'; close.title = '移除容器，保留文件';
-    close.setAttribute('aria-label', `移除 ${container.name}`);
+    close.type = 'button'; close.title = t('移除容器，保留文件');
+    close.setAttribute('aria-label', t('移除 {name}', {name: container.name}));
     close.addEventListener('click', event => { event.stopPropagation(); action({ action: 'delete', id: container.id }); });
     header.append(select, name, close);
     const body = element('div', 'pdf-body');
     body.tabIndex = 0; body.setAttribute('role', 'button');
-    body.setAttribute('aria-label', `转换并下载 ${container.name}.pdf`);
+    body.setAttribute('aria-label', t('转换并下载 {name}.pdf', {name: container.name}));
     const members = container.file_ids.map(id => files.get(id)).filter(Boolean);
     item.classList.toggle('has-members', members.length > 0);
     if (members.length) {
-      body.append(element('span', 'pdf-download-label', '下载 PDF'));
+      body.append(element('span', 'pdf-download-label', t('下载 PDF')));
     } else {
       body.append(element('span', 'pdf-badge', 'PDF'));
-      body.append(element('p', 'pdf-summary', '将文件拖到这里'));
-      body.append(element('p', 'pdf-hint', '同一容器仅接受相同格式'));
+      body.append(element('p', 'pdf-summary', t('将文件拖到这里')));
+      body.append(element('p', 'pdf-hint', t('同一容器仅接受相同格式')));
     }
     body.addEventListener('click', () => download({ container_id: container.id }));
     body.addEventListener('keydown', event => {
@@ -158,13 +161,13 @@ window.PdfFiles = (() => {
         image.draggable = false;
         image.addEventListener('error', () => {
           thumb.classList.add('thumbnail-error');
-          image.replaceWith(element('span', '', '无法预览'));
+          image.replaceWith(element('span', '', t('无法预览')));
         }, { once: true });
         thumb.append(image);
         const rotate = element('button', 'pdf-rotate', '↻');
         rotate.type = 'button'; rotate.draggable = false;
-        rotate.title = `顺时针旋转 ${file.name} 90°`;
-        rotate.setAttribute('aria-label', `顺时针旋转 ${file.name} 90°`);
+        rotate.title = t('顺时针旋转 {name} 90°', {name: file.name});
+        rotate.setAttribute('aria-label', rotate.title);
         rotate.addEventListener('click', event => {
           event.stopPropagation();
           action({ action: 'rotate', id: container.id, file_id: file.id });
@@ -176,7 +179,7 @@ window.PdfFiles = (() => {
       const label = element('span', '', file.name);
       label.title = file.name;
       const remove = element('button', 'pdf-remove-file', '↗');
-      remove.type = 'button'; remove.title = '移出容器'; remove.setAttribute('aria-label', `移出 ${file.name}`);
+      remove.type = 'button'; remove.title = t('移出容器'); remove.setAttribute('aria-label', t('移出 {name}', {name: file.name}));
       remove.addEventListener('click', event => { event.stopPropagation(); action({ action: 'remove', id: container.id, file_id: file.id }); });
       row.append(position, label, remove);
       dragSource(row, file, true);
@@ -213,8 +216,8 @@ window.PdfFiles = (() => {
       const card = LocalFiles.createCard(file);
       dragSource(card, file);
       const select = element('input', 'file-select'); select.type = 'checkbox';
-      select.checked = selected.has(file.id); select.title = '勾选后下载选中项，也可一起拖动';
-      select.setAttribute('aria-label', `选择 ${file.name}`);
+      select.checked = selected.has(file.id); select.title = t('勾选后下载选中项，也可一起拖动');
+      select.setAttribute('aria-label', t('选择 {name}', {name: file.name}));
       select.addEventListener('change', () => {
         if (select.checked) selected.add(file.id); else selected.delete(file.id);
         item.classList.toggle('selected', select.checked);
@@ -225,31 +228,31 @@ window.PdfFiles = (() => {
     });
     result.pdf_containers.forEach(container => list.append(containerCard(container, files)));
     document.getElementById('files-empty').hidden = files.size > 0 || result.pdf_containers.length > 0;
-    document.getElementById('files-folder').textContent = files.size ? `保存位置：${result.files_folder}` : '';
+    document.getElementById('files-folder').textContent = files.size ? t('保存位置：{folder}', {folder: result.files_folder}) : '';
     addButton.disabled = result.pdf_containers.some(c => !c.file_ids.length);
-    addButton.title = addButton.disabled ? '请先给空容器加入文件' : '新建 PDF 容器';
+    addButton.title = t(addButton.disabled ? '请先给空容器加入文件' : '新建 PDF 容器');
     updateDownloadControls();
-    document.getElementById('pdf-support').textContent = result.pdf_capabilities.hint;
+    document.getElementById('pdf-support').textContent = t(result.pdf_capabilities.hint);
   }
   async function download(payload) {
-    if (busy) { tell('正在准备上一次下载，请稍候…'); return; }
+    if (busy) { tell(t('正在准备上一次下载，请稍候…')); return; }
     busy = true; allButton.disabled = true;
     list.setAttribute('aria-busy', 'true');
-    tell('正在准备下载…');
+    tell(t('正在准备下载…'));
     try {
       let job = await request('/api/exports', payload);
       while (job.state === 'working') {
-        tell(job.message);
+        tell(t(job.message));
         await new Promise(resolve => setTimeout(resolve, 600));
         const response = await fetch(`/api/exports/${job.id}`, { cache: 'no-store' });
         job = await response.json();
-        if (!response.ok) throw new Error(job.error || '下载准备失败');
+        if (!response.ok) throw new Error(t(job.error || '下载准备失败'));
       }
-      if (job.state !== 'ready') throw new Error(job.message);
+      if (job.state !== 'ready') throw new Error(t(job.message));
       const link = element('a'); link.href = job.download_url; link.download = job.name;
       document.body.append(link); link.click(); link.remove();
-      tell(`已开始下载 ${job.name} · ${LocalFiles.formatSize(job.bytes)}`);
-    } catch (error) { tell(error.message || '下载失败，请重试'); }
+      tell(t('已开始下载 {name} · {size}', {name: job.name, size: LocalFiles.formatSize(job.bytes)}));
+    } catch (error) { tell(error.message || t('下载失败，请重试')); }
     finally {
       busy = false; list.removeAttribute('aria-busy');
       updateDownloadControls();
@@ -276,5 +279,5 @@ window.PdfFiles = (() => {
   });
   allButton.addEventListener('click', () => download(selected.size || selectedContainers.size
     ? { selected: { file_ids: [...selected], container_ids: [...selectedContainers] } } : { all: true }));
-  return { update, reset: () => { snapshot = null; version = ''; selected.clear(); selectedContainers.clear(); } };
+  return { update, refreshLanguage: () => { tell(''); version = ''; update(snapshot); }, reset: () => { snapshot = null; version = ''; selected.clear(); selectedContainers.clear(); } };
 })();

@@ -12,8 +12,19 @@ if ($address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork)
     throw 'HotspotAddress must be an IPv4 address.'
 }
 if (-not $PythonExe) {
-    $PythonExe = (python -c 'import sys; print(sys.executable)').Trim()
-    if ($LASTEXITCODE -ne 0) { throw 'Could not find the Python executable.' }
+    $probe = 'import sys; print(sys.executable) if sys.version_info >= (3, 10) else sys.exit(1)'
+    foreach ($launcher in @('py', 'python')) {
+        if (-not (Get-Command $launcher -ErrorAction SilentlyContinue)) { continue }
+        $candidateArgs = if ($launcher -eq 'py') { @('-3', '-c', $probe) } else { @('-c', $probe) }
+        try {
+            $candidate = & $launcher @candidateArgs 2>$null
+            if ($LASTEXITCODE -eq 0 -and $candidate) {
+                $PythonExe = [string]$candidate
+                break
+            }
+        } catch { }
+    }
+    if (-not $PythonExe) { throw 'Could not find Python 3.10 or newer.' }
 }
 $PythonExe = (Resolve-Path -LiteralPath $PythonExe).Path
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) { throw 'Python executable not found.' }
@@ -26,8 +37,8 @@ for ($index = 0; $index -lt 4; $index++) {
 }
 $remoteSubnet = ($networkBytes -join '.') + '/' + $PrefixLength
 $ruleName = "LocalConnect-Hotspot-TCP-$Port"
+$displayName = "Local Connect PC Hotspot (TCP $Port)"
 $settings = @{
-    DisplayName = "Local Connect PC Hotspot (TCP $Port)"
     Direction = 'Inbound'
     Action = 'Allow'
     Enabled = 'True'
@@ -40,8 +51,8 @@ $settings = @{
     Description = 'Allow phones on the PC hotspot to reach this Local Connect Python service.'
 }
 if (Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue) {
-    Set-NetFirewallRule -Name $ruleName @settings | Out-Null
+    Set-NetFirewallRule -Name $ruleName -NewDisplayName $displayName @settings | Out-Null
 } else {
-    New-NetFirewallRule -Name $ruleName @settings | Out-Null
+    New-NetFirewallRule -Name $ruleName -DisplayName $displayName @settings | Out-Null
 }
 Write-Output "Allowed TCP ${Port}: $remoteSubnet -> $HotspotAddress ($PythonExe)"

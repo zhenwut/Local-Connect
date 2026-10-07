@@ -4,6 +4,7 @@ window.LocalFiles = (() => {
     pdf: ["#cf3845", "PDF"], word: ["#2869bd", "W"], excel: ["#218354", "X"],
     slides: ["#ce622f", "P"], audio: ["#8861bd", "♪"], video: ["#ad4f9e", "▶"],
     image: ["#2b8e9e", "IMG"], archive: ["#b0822a", "ZIP"], text: ["#527590", "TXT"],
+    csv: ["#218354", "CSV"], ebook: ["#965ea5", "BOOK"],
     file: ["#78879b", "FILE"]
   };
 
@@ -29,8 +30,8 @@ window.LocalFiles = (() => {
     card.className = file.preview_url ? "file-card has-preview" : "file-card";
     card.href = file.download_url;
     card.download = file.name;
-    card.title = `下载 ${file.name}`;
-    card.setAttribute("aria-label", `下载 ${file.name}`);
+    card.title = window.LocalI18n ? LocalI18n.t('下载 {name}', {name: file.name}) : `下载 ${file.name}`;
+    card.setAttribute("aria-label", card.title);
     const info = document.createElement("div");
     info.className = "file-info";
     const name = document.createElement("span");

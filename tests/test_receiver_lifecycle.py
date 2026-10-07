@@ -77,4 +77,4 @@ class ReceiverLifecycleTests(unittest.TestCase):
         connection.used_hotspot = True
         with patch.object(connection, "_run_helper") as helper:
             connection.close(stop_active_hotspot=True)
-            helper.assert_called_once_with("stop")
+            helper.assert_called_once_with("stop", {"previous_config": None, "expected_password": connection.password})

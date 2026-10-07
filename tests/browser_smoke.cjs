@@ -81,26 +81,51 @@ async function until(check, label) {
   const qrBeforeArrival = await evaluate(pc, "connectQr.src");
   const firstScanCapture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, pc);
   fs.writeFileSync(path.join(output, 'connection-first-scan.png'), Buffer.from(firstScanCapture.data, 'base64'));
-  const phone = await page(fixtureData.url + '/#code=ABCD2345', 390, 844);
-  await until(() => evaluate(phone, "!!document.getElementById('photos') && typeof LocalFiles !== 'undefined'"), 'phone ready');
-  await until(async () => (await (await fetch(fixtureData.url + '/api/connect')).json()).phone_opened, 'second QR arrival reported');
-  await until(() => evaluate(pc, "connectSteps.dataset.stage === '2'"), 'second scan reflected in timeline');
-  assert.equal(await evaluate(pc, "connectQr.src"), qrBeforeArrival);
   await call('Page.bringToFront', {}, pc);
-  await evaluate(pc, "resetTimeline(); updateTimeline('web', false); updateTimeline('web', true)");
+  await evaluate(pc, "resetTimeline(); updateTimeline('wifi', false); updateTimeline('web', false)");
   const progressBefore = await evaluate(pc, "timelineProgress");
-  await pause(650);
+  await pause(350);
   const progressAfter = await evaluate(pc, "timelineProgress");
-  assert(progressAfter > progressBefore && progressAfter < 1, `timeline did not visibly advance: ${progressBefore} → ${progressAfter}; hidden=${await evaluate(pc, 'document.hidden')}`);
+  assert(progressAfter > progressBefore && progressAfter < 1, `line did not advance after hotspot scan: ${progressBefore} → ${progressAfter}`);
+  assert.equal(await evaluate(pc, "timelineStage === 1 && !connectSteps.classList.contains('is-complete')"), true);
   const midScanCapture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, pc);
   fs.writeFileSync(path.join(output, 'connection-line-moving.png'), Buffer.from(midScanCapture.data, 'base64'));
-  assert.equal(await evaluate(pc, "(() => { const before = timelineProgress; updateTimeline('web', true); return timelineStage === 2 && timelineProgress >= before && !connectSteps.classList.contains('is-complete'); })()"), true);
-  await until(() => evaluate(pc, "connectSteps.classList.contains('is-complete') && !webStep.hasAttribute('aria-current')"), 'line fills before second node lights');
+  await until(() => evaluate(pc, "timelineProgress === 1"), 'line fills after first scan');
+  assert.equal(await evaluate(pc, "connectSteps.classList.contains('is-complete')"), false);
+  const phone = await page(fixtureData.url + '/#code=ABCD2345', 390, 844);
+  await until(() => evaluate(phone, "!!document.getElementById('photos') && typeof LocalFiles !== 'undefined'"), 'phone ready');
+  for (const target of [pc, phone]) {
+    assert.equal(await evaluate(target, "document.documentElement.lang"), 'zh-CN');
+    assert.equal(await evaluate(target, "document.querySelector('.brand-mark')"), null);
+    await evaluate(target, "document.getElementById('language-toggle').click()");
+    assert.equal(await evaluate(target, "document.documentElement.lang"), 'en');
+    assert.equal(await evaluate(target, "document.querySelector('h1').textContent"), target === pc ? 'Receive workspace' : 'Send to computer');
+    await evaluate(target, "document.getElementById('language-toggle').click()");
+    assert.equal(await evaluate(target, "document.documentElement.lang"), 'zh-CN');
+  }
+  assert.equal((await fetch(fixtureData.url + '/api/send', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: 'ABCD2345', text: '发送到电脑' })
+  })).status, 200);
+  await until(() => evaluate(pc, "document.getElementById('text').textContent === '发送到电脑'"), 'user text received');
+  await evaluate(pc, "document.getElementById('language-toggle').click()");
+  assert.equal(await evaluate(pc, "document.getElementById('text').textContent"), '发送到电脑');
+  await evaluate(pc, "document.getElementById('language-toggle').click()");
+  await until(async () => (await (await fetch(fixtureData.url + '/api/connect')).json()).phone_opened, 'second QR arrival reported');
+  await until(() => evaluate(pc, "connectSteps.dataset.stage === '2' && connectSteps.classList.contains('is-complete')"), 'second scan lights second node');
+  assert.equal(await evaluate(pc, "connectQr.src"), qrBeforeArrival);
+  await call('Page.bringToFront', {}, pc);
+  assert.equal(await evaluate(pc, "!webStep.hasAttribute('aria-current')"), true);
   assert.equal(await evaluate(pc, "timelineProgress"), 1);
   await pause(700);
   const secondScanCapture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, pc);
   fs.writeFileSync(path.join(output, 'connection-second-scan.png'), Buffer.from(secondScanCapture.data, 'base64'));
   assert.equal(await evaluate(pc, "updateTimeline('wifi', false); connectSteps.dataset.stage === '2' && connectSteps.classList.contains('is-complete')"), true);
+  const languageButton = await evaluate(phone, "(() => { const r = document.getElementById('language-toggle').getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()");
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', ...languageButton }, phone);
+  await evaluate(phone, "document.getElementById('language-toggle').click()");
+  assert.equal(await evaluate(phone, "getComputedStyle(document.getElementById('language-toggle')).backgroundColor.match(/\\d+/g).slice(0, 3).every(value => Number(value) > 200)"), true);
+  await evaluate(phone, "document.getElementById('language-toggle').click()");
   assert.deepEqual(await evaluate(pc, `(() => {
     const qr = document.getElementById('connect-panel').getBoundingClientRect();
     const text = document.querySelector('.text-workspace').getBoundingClientRect();
@@ -132,8 +157,27 @@ async function until(check, label) {
   assert.equal(await evaluate(phone, "document.getElementById('text-count').textContent"), '5 字符');
   await until(() => evaluate(pc, "document.getElementById('text-count').textContent === '5 字符'"), 'received character count');
   await until(() => evaluate(phone, "document.querySelectorAll('.upload-row[data-state=done]').length === 8"), 'uploads complete');
+  assert.equal(await evaluate(phone, `(() => {
+    const name = document.querySelector('.upload-row strong');
+    const original = name.textContent;
+    name.textContent = '发送到电脑';
+    document.getElementById('language-toggle').click();
+    const afterSwitch = name.textContent;
+    document.getElementById('language-toggle').click();
+    name.textContent = original;
+    return afterSwitch;
+  })()`), '发送到电脑');
   assert.equal(await evaluate(phone, "document.getElementById('retry-upload').hidden"), true);
   await until(() => evaluate(pc, "document.querySelectorAll('.file-card').length === 8"), 'cards received');
+  await evaluate(phone, "document.getElementById('language-toggle').click()");
+  assert.equal(await evaluate(phone, "document.getElementById('text-count').textContent"), '5 characters');
+  assert.equal(await evaluate(phone, "document.getElementById('photo-status').textContent.includes('files uploaded')"), true);
+  await evaluate(phone, "document.getElementById('language-toggle').click()");
+  await evaluate(pc, "document.getElementById('language-toggle').click()");
+  await until(() => evaluate(pc, "document.getElementById('files-total').textContent.includes('8 original files')"), 'English file summary');
+  assert.equal(await evaluate(pc, "document.getElementById('pdf-support').textContent.startsWith('Images, PDF')"), true);
+  assert.equal(await evaluate(pc, "document.querySelector('.file-card').title.startsWith('Download ')"), true);
+  await evaluate(pc, "document.getElementById('language-toggle').click()");
   assert.equal(await evaluate(pc, "Math.abs(document.querySelector('.text-workspace').getBoundingClientRect().height - document.querySelector('.files-workspace').getBoundingClientRect().height) < 2"), true);
   assert.equal(await evaluate(pc, "document.querySelectorAll('.file-download').length === 0"), true);
   await call('Page.bringToFront', {}, pc);

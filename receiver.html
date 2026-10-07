@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Local Connect · 电脑接收页</title>
   <link rel="stylesheet" href="/files-ui.css">
+  <script src="/i18n.js"></script>
   <script src="/files-ui.js"></script>
   <style>
     body { max-width: 1400px; margin: 0 auto; padding: 28px clamp(18px, 3vw, 44px) 64px; }
@@ -17,16 +18,16 @@
     #connect-panel.has-qr { display: grid; grid-template-columns: 152px minmax(0, 1fr) 208px; grid-template-areas: "steps title qr" "steps instruction qr" "steps detail qr"; gap: 4px 26px; align-items: start; }
     .connect-timeline { grid-area: steps; position: relative; align-self: stretch; min-height: 205px; --timeline-progress: 0; }
     .connect-steps { position: relative; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; height: 100%; min-height: 205px; margin: 0; padding: 4px 0; list-style: none; }
-    .connect-steps::before { content: ''; position: absolute; z-index: 0; top: 48px; bottom: 48px; left: 21px; width: 4px; border-radius: 4px; background: #d5e1ef; }
-    .connect-line-fill { position: absolute; z-index: 0; top: 48px; left: 21px; width: 4px; height: calc(100% - 96px); border-radius: 4px; background: var(--accent); box-shadow: 0 0 9px #1764be65; transform: scaleY(var(--timeline-progress)); transform-origin: top; pointer-events: none; }
+    .connect-steps::before { content: ''; position: absolute; z-index: 0; top: 48px; bottom: 48px; left: 21px; width: 4px; border-radius: 4px; background: #dfdfdf; }
+    .connect-line-fill { position: absolute; z-index: 0; top: 48px; left: 21px; width: 4px; height: calc(100% - 96px); border-radius: 4px; background: var(--accent); box-shadow: 0 0 9px #19191965; transform: scaleY(var(--timeline-progress)); transform-origin: top; pointer-events: none; }
     .connect-step { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; color: var(--text-muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
-    .step-dot { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 2px solid #afc5dc; border-radius: 50%; color: var(--text-muted); background: var(--surface); box-shadow: 0 1px 4px #234c7d12; font-size: 15px; transition: background .32s, border-color .32s, color .32s, box-shadow .32s; }
-    .connect-step[aria-current="step"] .step-dot { border-color: var(--accent); box-shadow: 0 0 0 5px #1764be16; }
+    .step-dot { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 2px solid #c2c2c2; border-radius: 50%; color: var(--text-muted); background: var(--surface); box-shadow: 0 1px 4px #47474712; font-size: 15px; transition: background .32s, border-color .32s, color .32s, box-shadow .32s; }
+    .connect-step[aria-current="step"] .step-dot { border-color: var(--accent); box-shadow: 0 0 0 5px #19191916; }
     .connect-steps[data-stage="1"] .step-wifi .step-dot, .connect-steps[data-stage="2"] .step-wifi .step-dot, .connect-steps.is-complete .step-web .step-dot { border-color: var(--accent); color: white; background: var(--accent); }
     .connect-steps.is-complete .step-web { color: var(--accent-deep); transition: color .32s; }
     .connect-steps[data-stage="1"] .step-wifi .step-dot { animation: step-light .65s ease-out; }
     .connect-steps.is-complete .step-web .step-dot { animation: step-light .65s ease-out; }
-    @keyframes step-light { 0% { box-shadow: 0 0 0 0 #1764be50; transform: scale(.9); } 65% { box-shadow: 0 0 0 11px #1764be00; transform: scale(1.08); } 100% { box-shadow: 0 0 0 0 #1764be00; transform: scale(1); } }
+    @keyframes step-light { 0% { box-shadow: 0 0 0 0 #19191950; transform: scale(.9); } 65% { box-shadow: 0 0 0 11px #19191900; transform: scale(1.08); } 100% { box-shadow: 0 0 0 0 #19191900; transform: scale(1); } }
     #connect-title { grid-area: title; }
     #connect-instruction { grid-area: instruction; }
     #connect-detail { grid-area: detail; }
@@ -66,7 +67,7 @@
 </head>
 <body>
   <header class="app-header">
-    <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><span>Local Connect</span><span class="brand-context">电脑接收</span></div>
+    <div class="header-row"><div class="app-brand"><span>Local Connect</span><span class="brand-context">电脑接收</span></div><button id="language-toggle" class="language-toggle" type="button">EN</button></div>
     <h1>接收工作台</h1>
     <p>扫码连接手机，文字和文件会直接出现在这里。</p>
   </header>
@@ -88,7 +89,7 @@
     <section class="text-workspace" aria-label="收到的文本">
       <h2>收到的文本</h2>
       <p>手机发送的最新文本会显示在这里。</p>
-      <div id="text" class="box" aria-live="polite"></div>
+      <div id="text" class="box" aria-live="polite" data-i18n-user-content></div>
       <p id="text-count" class="character-count" title="按 Unicode 字符计数，包含空格与换行">0 字符</p>
       <button id="copy" type="button" disabled>复制文本</button>
       <p id="status" role="status" aria-live="polite">等待文本…</p>
@@ -99,13 +100,15 @@
     <p id="pdf-support"></p>
     <p id="files-folder"></p>
     <div id="files-empty" class="empty-files">等待手机上传文件…</div>
-    <ul id="file-list" class="file-grid" aria-label="收到的文件与 PDF 容器"></ul>
+    <ul id="file-list" class="file-grid" aria-label="收到的文件与 PDF 容器" data-i18n-user-content></ul>
     <div class="files-footer"><span id="files-total">0 个原文件 · 总大小 0 B</span><button id="download-all" type="button" disabled>一键下载 ZIP ↓</button></div>
     <p id="files-status" role="status" aria-live="polite"></p>
     </section>
   </main>
   <script src="/pdf-ui.js"></script>
   <script>
+    LocalI18n.init();
+    const t = LocalI18n.t;
     const connectTitle = document.getElementById("connect-title");
     const connectPanel = document.getElementById("connect-panel");
     const connectInstruction = document.getElementById("connect-instruction");
@@ -129,7 +132,7 @@
     }
 
     function finishTimeline() {
-      if (timelineStage !== 2 || connectSteps.classList.contains("is-complete")) return;
+      if (timelineStage !== 2 || timelineProgress < 1 || connectSteps.classList.contains("is-complete")) return;
       if (timelineFrame !== null) cancelAnimationFrame(timelineFrame);
       timelineFrame = null;
       setTimelineProgress(1);
@@ -141,7 +144,7 @@
       if (timelineFrame !== null || timelineProgress >= 1 || connectTimeline.hidden) return;
       timelineLastFrame = 0;
       function frame(timestamp) {
-        if (timelineStage !== 2 || connectTimeline.hidden) { timelineFrame = null; return; }
+        if (timelineStage < 1 || connectTimeline.hidden) { timelineFrame = null; return; }
         if (document.hidden) {
           timelineLastFrame = 0;
           timelineFrame = requestAnimationFrame(frame);
@@ -149,7 +152,7 @@
         }
         if (timelineLastFrame) {
           const elapsed = Math.min(timestamp - timelineLastFrame, 50);
-          setTimelineProgress(Math.min(1, timelineProgress + elapsed / 2800));
+          setTimelineProgress(Math.min(1, timelineProgress + elapsed / 800));
         }
         timelineLastFrame = timestamp;
         if (timelineProgress < 1) timelineFrame = requestAnimationFrame(frame);
@@ -181,27 +184,27 @@
         return;
       }
       const next = mode === "web" ? (phoneOpened ? 2 : 1) : 0;
-      if (next <= timelineStage) {
-        if (timelineStage === 2 && timelineProgress < 1) animateTimeline();
-        return;
-      }
       if (timelineStage < 1) {
+        if (next < 1) return;
         timelineStage = 1;
         connectSteps.dataset.stage = "1";
         wifiStep.removeAttribute("aria-current");
         webStep.setAttribute("aria-current", "step");
+        animateTimeline();
       }
-      if (next < 2) return;
-      timelineStage = 2;
-      connectSteps.dataset.stage = "2";
-      animateTimeline();
+      if (next === 2 && timelineStage < 2) {
+        timelineStage = 2;
+        connectSteps.dataset.stage = "2";
+      }
+      if (timelineProgress < 1) animateTimeline();
+      else finishTimeline();
     }
 
     async function refreshConnection() {
       try {
         if (!receiverReady) return;
         const response = await fetch("/api/connect", { cache: "no-store" });
-        if (!response.ok) throw new Error("连接状态读取失败");
+        if (!response.ok) throw new Error(t("连接状态读取失败"));
         const result = await response.json();
         updateTimeline(result.mode, result.phone_opened);
         const key = [result.mode, result.ssid, result.password, result.web_url, result.code, result.reason, result.phone_opened].join("|");
@@ -210,30 +213,33 @@
           connectQr.hidden = result.mode === "manual";
           connectPanel.classList.toggle("has-qr", result.mode !== "manual");
           if (result.mode === "wifi") {
-            connectTitle.textContent = "第一步：扫描二维码连接电脑热点";
-            connectInstruction.textContent = "用手机相机扫描并确认加入 Wi-Fi。连接成功后，这里会自动显示第二个二维码。";
+            connectTitle.textContent = t("第一步：扫描二维码连接电脑热点");
+            connectInstruction.textContent = t("用手机相机扫描并确认加入 Wi-Fi。连接成功后，这里会自动显示第二个二维码。");
             if (qrMode !== "wifi") { connectQr.src = "/api/connect/qr?wifi"; qrMode = "wifi"; }
-            connectQr.alt = "连接电脑热点的 Wi-Fi 二维码";
-            connectDetail.textContent = `热点名称：${result.ssid}　热点密码：${result.password}`;
+            connectQr.alt = t("连接电脑热点的 Wi-Fi 二维码");
+            connectDetail.textContent = t("热点名称：{ssid}　热点密码：{password}", result);
           } else if (result.mode === "web") {
-            connectTitle.textContent = result.phone_opened ? "手机已打开传输页" : "第二步：扫描二维码打开传输页";
+            connectTitle.textContent = t(result.phone_opened ? "手机已打开传输页" : "第二步：扫描二维码打开传输页");
             connectInstruction.textContent = result.phone_opened
-              ? "两步连接已完成，可以在手机上发送文件或文本。"
-              : "手机已连接电脑热点。再次扫描下面的二维码，网页会自动填写本次访问码。";
+              ? t("两步连接已完成，可以在手机上发送文件或文本。")
+              : t("手机已连接电脑热点。再次扫描下面的二维码，网页会自动填写本次访问码。");
             if (qrMode !== "web") { connectQr.src = "/api/connect/qr?web"; qrMode = "web"; }
-            connectQr.alt = "打开手机传输页的二维码";
-            connectDetail.textContent = `若扫码无法打开，请在手机浏览器输入 ${result.web_url}，访问码 ${result.code}。`;
+            connectQr.alt = t("打开手机传输页的二维码");
+            connectDetail.textContent = t("若扫码无法打开，请在手机浏览器输入 {url}，访问码 {code}。", {url: result.web_url, code: result.code});
           } else {
-            connectTitle.textContent = result.reason === "hotspot_address_missing" ? "热点已开启，正在获取地址" : "手动连接";
+            connectTitle.textContent = t(result.reason === "hotspot_address_missing" ? "热点已开启，正在获取地址"
+              : result.reason === "hotspot_listener_pending" ? "热点已开启，正在等待手机入口就绪" : "热点不可用");
             connectInstruction.textContent = result.reason === "hotspot_address_missing"
-              ? "电脑正在识别热点的 IPv4 地址，识别成功后会自动出现二维码。若长时间没有变化，可暂用以下手动连接信息。"
-              : "电脑热点无法使用。请让手机和电脑接入能互访的同一网络，在手机浏览器输入以下地址和访问码。";
+              ? t("电脑正在识别热点的 IPv4 地址，识别成功后会自动出现二维码。")
+              : result.reason === "hotspot_listener_pending"
+                ? t("电脑正在等待热点地址可用，准备好后会自动显示二维码。")
+                : t("电脑热点无法使用，手机传输暂不可用。请检查 Windows 移动热点和 Wi-Fi 适配器后重启服务。");
             if (qrMode) { connectQr.removeAttribute("src"); qrMode = ""; }
-            connectDetail.textContent = `手机网址：${result.web_url || "请运行 ipconfig 查找电脑 IPv4 地址"}　访问码：${result.code}`;
+            connectDetail.textContent = "";
           }
         }
       } catch {
-        connectTitle.textContent = "连接状态读取失败";
+        connectTitle.textContent = t("连接状态读取失败");
       } finally {
         setTimeout(refreshConnection, 3000);
       }
@@ -254,12 +260,12 @@
         if (result.version !== latestVersion) {
           latestVersion = result.version;
           textBox.textContent = result.text;
-          document.getElementById("text-count").textContent = `${LocalFiles.characterCount(result.text).toLocaleString("zh-CN")} 字符`;
+          document.getElementById("text-count").textContent = t("{count} 字符", {count: LocalFiles.characterCount(result.text).toLocaleString(LocalI18n.language === "en" ? "en-US" : "zh-CN")});
           copyButton.disabled = !result.text;
-          status.textContent = result.text ? "已收到最新文本。" : "等待文本…";
+          status.textContent = t(result.text ? "已收到最新文本。" : "等待文本…");
         }
       } catch {
-        status.textContent = "连接中断，正在重试…";
+        status.textContent = t("连接中断，正在重试…");
       } finally {
         setTimeout(refresh, 1000);
       }
@@ -284,9 +290,9 @@
     copyButton.addEventListener("click", async () => {
       try {
         await copy(textBox.textContent);
-        status.textContent = "已复制，可直接粘贴。";
+        status.textContent = t("已复制，可直接粘贴。");
       } catch {
-        status.textContent = "复制失败，请选中文本后手动复制。";
+        status.textContent = t("复制失败，请选中文本后手动复制。");
       }
     });
 
@@ -297,15 +303,24 @@
     let receiverLeaving = false;
     let receiverRegistering = false;
     let registrationRetry = null;
+    let receiverToken = "";
+    window.getReceiverToken = async () => {
+      if (receiverToken) return receiverToken;
+      const response = await fetch("/api/receiver/token", { cache: "no-store" });
+      if (!response.ok) throw new Error("receiver token unavailable");
+      receiverToken = (await response.json()).receiver_token;
+      return receiverToken;
+    };
 
     async function registerReceiver() {
       if (receiverLeaving || receiverRegistering) return;
       receiverRegistering = true;
       clearTimeout(registrationRetry);
       try {
+        const token = await window.getReceiverToken();
         const response = await fetch("/api/receiver/open", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ page_id: pageId })
+          body: JSON.stringify({ page_id: pageId, receiver_token: token })
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "无法连接服务");
@@ -327,7 +342,7 @@
         receiverReady = true;
       } catch {
         receiverReady = false;
-        status.textContent = "服务未连接，请确认 Local Connect 正在运行。";
+        status.textContent = t("服务未连接，请确认 Local Connect 正在运行。");
         if (!receiverLeaving) registrationRetry = setTimeout(registerReceiver, 1500);
       } finally {
         receiverRegistering = false;
@@ -339,7 +354,8 @@
       receiverReady = false;
       clearTimeout(registrationRetry);
       if (receiverStream) receiverStream.close();
-      const body = new Blob([JSON.stringify({ page_id: pageId })], { type: "application/json" });
+      if (!receiverToken) return;
+      const body = new Blob([JSON.stringify({ page_id: pageId, receiver_token: receiverToken })], { type: "application/json" });
       if (!navigator.sendBeacon("/api/receiver/close", body)) {
         fetch("/api/receiver/close", { method: "POST", body, keepalive: true }).catch(() => {});
       }
@@ -352,6 +368,12 @@
       }
     });
     registerReceiver();
+    window.addEventListener("languagechange", () => {
+      connectionKey = "";
+      latestVersion = -1;
+      refreshConnection(); refresh();
+      PdfFiles.refreshLanguage();
+    });
     refreshConnection();
     refresh();
   </script>

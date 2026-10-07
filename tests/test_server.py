@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import quote
 
-from server import MAX_TEXT_BYTES, TransferServer, is_loopback
+from server import MAX_TEXT_BYTES, HotspotPhoneListener, TransferServer, is_loopback
 
 
 class TransferServerTests(unittest.TestCase):
@@ -39,6 +39,9 @@ class TransferServerTests(unittest.TestCase):
         self.server.state.start_new_batch()
 
     def request(self, path, payload=None):
+        if payload is not None and (path.startswith('/api/receiver/') or path in (
+                '/api/pdf-containers', '/api/exports', '/api/photos/pdf', '/api/photos/new')):
+            payload = {**payload, 'receiver_token': self.server.receiver_token}
         data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(
             self.base + path,
@@ -113,10 +116,86 @@ class TransferServerTests(unittest.TestCase):
         error.exception.close()
         error.exception.close()
 
+    def test_unrecognized_host_and_missing_receiver_token_are_rejected(self):
+        for path in ('/receiver', '/api/latest', '/api/connect', '/api/receiver/token'):
+            request = Request(self.base + path, headers={'Host': f'evil.example:{self.server.server_port}'})
+            with self.assertRaises(HTTPError) as error:
+                urlopen(request)
+            self.assertEqual(error.exception.code, 403)
+            error.exception.close()
+        for path in ('/api/receiver/open', '/api/photos/new', '/api/photos/pdf', '/api/pdf-containers'):
+            request = Request(self.base + path, data=b'{"page_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+                              headers={'Content-Type': 'application/json'})
+            with self.assertRaises(HTTPError) as error:
+                urlopen(request)
+            self.assertEqual(error.exception.code, 403)
+            error.exception.close()
+        self.assertEqual(self.request('/api/receiver/token')[0], 200)
+
     def test_prompt_conversion_endpoint_is_absent(self):
         status, body = self.request("/api/convert", {"version": 1})
         self.assertEqual(status, 404)
         self.assertEqual(json.loads(body)["error"], "接口不存在")
+
+    def test_hotspot_listener_refuses_requests_when_hotspot_is_unavailable(self):
+        phone_server = TransferServer(("127.0.0.1", 0), "ABCD2345", shared_server=self.server)
+        thread = threading.Thread(target=phone_server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with self.assertRaises(HTTPError) as error:
+                urlopen(f"http://127.0.0.1:{phone_server.server_port}/")
+            self.assertEqual(error.exception.code, 503)
+            error.exception.close()
+            self.assertIs(phone_server.state, self.server.state)
+        finally:
+            phone_server.shutdown()
+            phone_server.server_close()
+            thread.join()
+
+    def test_phone_listener_checks_its_own_host(self):
+        connection = Mock()
+        connection.snapshot.return_value = {'mode': 'wifi'}
+        connection.listening_ip = '127.0.0.1'
+        previous = self.server.connection
+        self.server.connection = connection
+        phone_server = TransferServer(('127.0.0.1', 0), 'ABCD2345', shared_server=self.server)
+        thread = threading.Thread(target=phone_server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f'http://127.0.0.1:{phone_server.server_port}'
+            with urlopen(base + '/') as response:
+                self.assertEqual(response.status, 200)
+            request = Request(base + '/', headers={'Host': f'attacker.example:{phone_server.server_port}'})
+            with self.assertRaises(HTTPError) as error:
+                urlopen(request)
+            self.assertEqual(error.exception.code, 403)
+            error.exception.close()
+        finally:
+            phone_server.shutdown()
+            phone_server.server_close()
+            thread.join()
+            self.server.connection = previous
+
+    def test_hotspot_listener_retries_address_before_reporting_ready(self):
+        connection = Mock()
+        connection.lock = threading.Lock()
+        connection.password = "random-password"
+        connection.hotspot = {"active": True, "ip": "192.168.137.1", "password": connection.password}
+        local_server = Mock(connection=connection)
+        phone_server = Mock(server_address=("192.168.137.1", 8766))
+        listener = HotspotPhoneListener(local_server, "ABCD2345", 8766)
+        with patch("server.TransferServer", side_effect=[OSError(10049, "address not ready"), phone_server]), \
+             patch("server.threading.Thread") as thread:
+            self.assertFalse(listener.refresh())
+            self.assertIsNone(listener.phone_server)
+            self.assertIsNotNone(listener.last_error)
+            self.assertTrue(listener.refresh())
+            self.assertIs(listener.phone_server, phone_server)
+            self.assertIsNone(listener.last_error)
+            connection.set_listening_ip.assert_called_once_with("192.168.137.1")
+            thread.return_value.start.assert_called_once()
+        listener.close()
+        phone_server.shutdown.assert_called_once()
 
     def test_reject_invalid_code_empty_and_oversized_text(self):
         cases = [
@@ -213,7 +292,9 @@ class TransferServerTests(unittest.TestCase):
     def test_common_formats_download_byte_for_byte_with_unicode_name(self):
         for extension, category in [("png", "image"), ("heic", "image"), ("mp3", "audio"), ("mp4", "video"),
                                     ("pdf", "pdf"), ("doc", "word"), ("docx", "word"), ("xlsx", "excel"),
-                                    ("pptx", "slides"), ("zip", "archive"), ("custom", "file")]:
+                                    ("pptx", "slides"), ("zip", "archive"), ("txt", "text"),
+                                    ("csv", "csv"), ("tsv", "csv"), ("epub", "ebook"),
+                                    ("mobi", "ebook"), ("custom", "file")]:
             with self.subTest(extension=extension):
                 name = f"中文 文件.{extension}"
                 data = bytes(range(256)) * 3
