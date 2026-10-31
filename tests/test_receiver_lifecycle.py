@@ -73,7 +73,7 @@ class ReceiverLifecycleTests(unittest.TestCase):
 
     @patch("connection.os.name", "posix")
     def test_page_exit_stops_used_hotspot_even_if_it_was_already_on(self):
-        connection = ConnectionManager("ABCD2345", 8766, None)
+        connection = ConnectionManager("ABCD2345", 8000, None)
         connection.used_hotspot = True
         with patch.object(connection, "_run_helper") as helper:
             connection.close(stop_active_hotspot=True)

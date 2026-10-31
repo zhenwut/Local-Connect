@@ -9,7 +9,7 @@ class ConnectionTests(unittest.TestCase):
     def make_manager(self, hotspot):
         manager = object.__new__(ConnectionManager)
         manager.code = "ABCD2345"
-        manager.port = 8766
+        manager.port = 8000
         manager.lan_ip = "192.168.1.7"
         manager.lock = threading.Lock()
         manager.hotspot = hotspot
@@ -30,7 +30,7 @@ class ConnectionTests(unittest.TestCase):
         manager.hotspot["clients"] = 1
         second = manager.snapshot()
         self.assertEqual(second["mode"], "web")
-        self.assertEqual(second["web_qr"], "http://192.168.137.1:8766/#code=ABCD2345")
+        self.assertEqual(second["web_qr"], "http://192.168.137.1:8000/#code=ABCD2345")
         manager.hotspot["active"] = False
         fallback = manager.snapshot()
         self.assertEqual(fallback["mode"], "manual")
@@ -38,7 +38,7 @@ class ConnectionTests(unittest.TestCase):
 
     @patch("connection.os.name", "posix")
     def test_non_windows_skips_hotspot(self):
-        manager = ConnectionManager("ABCD2345", 8766, "192.168.1.7")
+        manager = ConnectionManager("ABCD2345", 8000, "192.168.1.7")
         self.assertEqual(manager.snapshot()["mode"], "manual")
         manager.close()
 
@@ -69,9 +69,9 @@ class ConnectionTests(unittest.TestCase):
     @patch.object(ConnectionManager, "_run_helper")
     def test_each_start_uses_new_strong_password(self, helper):
         helper.return_value = {"active": False}
-        first = ConnectionManager("ABCD2345", 8766, None)
+        first = ConnectionManager("ABCD2345", 8000, None)
         first_password = helper.call_args.args[1]["password"]
-        second = ConnectionManager("ABCD2345", 8766, None)
+        second = ConnectionManager("ABCD2345", 8000, None)
         second_password = helper.call_args.args[1]["password"]
         self.assertEqual(len(first_password), 24)
         self.assertTrue(set(first_password) <= set(PASSWORD_ALPHABET))

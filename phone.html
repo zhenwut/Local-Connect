@@ -117,7 +117,7 @@
       }
     }
     photoInput.addEventListener("change", () => {
-      for (const file of photoInput.files) {
+      for (const file of Array.from(photoInput.files).reverse()) {
         if (queue.some(item => !item.done && item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) continue;
         const row = document.createElement("li");
         row.className = "upload-row";

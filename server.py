@@ -693,7 +693,7 @@ class TransferHandler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="Local Connect：手机向电脑发送文本和文件")
-    parser.add_argument("--port", type=int, default=8766, help="监听端口，默认 8766")
+    parser.add_argument("--port", type=int, default=8000, help="监听端口，默认 8000")
     parser.add_argument("--open-browser", action="store_true", help="启动后打开电脑接收页")
     parser.add_argument('--storage-limit-gib', type=int, default=20,
                         help='Local Connect 传输文件的全局空间上限，默认 20 GiB；不会自动删除文件')

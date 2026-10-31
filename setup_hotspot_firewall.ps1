@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
 param(
-    [ValidateRange(1, 65535)][int]$Port = 8766,
+    [ValidateRange(1, 65535)][int]$Port = 8000,
     [string]$HotspotAddress = '192.168.137.1',
     [ValidateRange(1, 32)][int]$PrefixLength = 24,
     [string]$PythonExe = ''

@@ -21,7 +21,7 @@ window.LocalFiles = (() => {
     const holder = document.createElement("div");
     holder.className = "file-icon";
     holder.setAttribute("aria-hidden", "true");
-    holder.innerHTML = `<svg viewBox="0 0 60 70" xmlns="http://www.w3.org/2000/svg"><path d="M10 2h27l15 15v46a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z" fill="${color}" opacity=".13"/><path d="M37 2v15h15" fill="${color}" opacity=".3"/><rect x="0" y="26" width="48" height="28" rx="5" fill="${color}"/><text x="24" y="45" text-anchor="middle" font-size="${label.length > 2 ? 13 : 21}" font-family="system-ui,sans-serif" font-weight="700" fill="white">${label}</text></svg>`;
+    holder.innerHTML = `<svg viewBox="0 0 60 70" xmlns="http://www.w3.org/2000/svg"><path d="M10 2h27l15 15v46a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z" fill="${color}" fill-opacity=".18" stroke="${color}" stroke-width="2"/><path d="M37 2v15h15" fill="${color}" fill-opacity=".5"/><rect x="4" y="26" width="52" height="30" rx="5" fill="${color}"/><text x="30" y="46" text-anchor="middle" font-size="${label.length > 2 ? 13 : 21}" font-family="system-ui,sans-serif" font-weight="700" fill="white">${label}</text></svg>`;
     return holder;
   }
 
@@ -49,16 +49,15 @@ window.LocalFiles = (() => {
       preview.src = file.preview_url;
       preview.addEventListener("error", () => {
         preview.replaceWith(fileIcon(file.category));
-        info.appendChild(size);
       }, { once: true });
       card.appendChild(preview);
     } else {
       card.appendChild(fileIcon(file.category));
-      info.appendChild(size);
     }
+    info.appendChild(size);
     card.appendChild(info);
     return card;
   }
   function characterCount(text) { return Array.from(text).length; }
-  return { createCard, formatSize, characterCount };
+  return { createCard, fileIcon, formatSize, characterCount };
 })();

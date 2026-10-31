@@ -150,6 +150,8 @@ async function until(check, label) {
   await evaluate(phone, "codeInput.value = 'WRONG123'");
   await call('DOM.setFileInputFiles', { nodeId, files: fixtureData.files.slice(0, 3) }, phone);
   await until(() => evaluate(phone, "!document.getElementById('retry-upload').hidden && document.querySelector('.upload-row[data-state=error]') !== null"), 'failed upload exposes retry');
+  assert.deepEqual(await evaluate(phone, "Array.from(document.querySelectorAll('.upload-row strong'), node => node.textContent)"),
+    ['年度报表.xlsx', '项目说明.docx', '照片.jpg']);
   await evaluate(phone, "codeInput.value = 'ABCD2345'; codeInput.dispatchEvent(new Event('input'))");
   await call('DOM.setFileInputFiles', { nodeId, files: fixtureData.files.slice(3) }, phone);
   assert.equal(await evaluate(phone, "document.querySelectorAll('.upload-row').length"), 8);
@@ -157,6 +159,8 @@ async function until(check, label) {
   assert.equal(await evaluate(phone, "document.getElementById('text-count').textContent"), '5 字符');
   await until(() => evaluate(pc, "document.getElementById('text-count').textContent === '5 字符'"), 'received character count');
   await until(() => evaluate(phone, "document.querySelectorAll('.upload-row[data-state=done]').length === 8"), 'uploads complete');
+  assert.deepEqual((await (await fetch(fixtureData.url + '/api/latest')).json()).files.map(file => file.name),
+    [...fixtureData.files.slice(0, 3).reverse(), ...fixtureData.files.slice(3).reverse()].map(file => path.basename(file)));
   assert.equal(await evaluate(phone, `(() => {
     const name = document.querySelector('.upload-row strong');
     const original = name.textContent;
@@ -169,6 +173,10 @@ async function until(check, label) {
   })()`), '发送到电脑');
   assert.equal(await evaluate(phone, "document.getElementById('retry-upload').hidden"), true);
   await until(() => evaluate(pc, "document.querySelectorAll('.file-card').length === 8"), 'cards received');
+  assert.equal(await evaluate(pc, `(() => {
+    const colored = Array.from(document.querySelectorAll('.file-icon svg')).map(svg => svg.querySelector('rect').getAttribute('fill'));
+    return new Set(colored).size >= 4 && colored.every(color => color !== '#191919');
+  })()`), true);
   await evaluate(phone, "document.getElementById('language-toggle').click()");
   assert.equal(await evaluate(phone, "document.getElementById('text-count').textContent"), '5 characters');
   assert.equal(await evaluate(phone, "document.getElementById('photo-status').textContent.includes('files uploaded')"), true);
@@ -187,8 +195,8 @@ async function until(check, label) {
   fs.writeFileSync(path.join(output, 'receiver-image.png'), Buffer.from(imageCapture.data, 'base64'));
   assert.equal(await evaluate(pc, "getComputedStyle(document.querySelector('.file-preview')).objectFit === 'cover'"), true);
   assert.equal(await evaluate(pc, "(() => { const card = document.querySelector('.file-preview').closest('.file-item'); const box = card.querySelector('.file-select'); const style = getComputedStyle(box); const insetX = box.getBoundingClientRect().left - card.getBoundingClientRect().left; const insetY = box.getBoundingClientRect().top - card.getBoundingClientRect().top; return insetX >= 8 && insetX <= 12 && insetY >= 8 && insetY <= 12 && style.boxShadow === 'none' && style.borderRadius === '6px' && style.appearance === 'none' && !card.querySelector('.file-select-wrap'); })()"), true);
-  assert.equal(await evaluate(pc, "document.querySelector('.file-preview').parentElement.querySelector('.file-size') === null"), true);
-  assert.equal(await evaluate(pc, "document.querySelectorAll('.file-size').length"), 7);
+  assert.equal(await evaluate(pc, "document.querySelector('.file-preview').parentElement.querySelector('.file-size').textContent === '644 B'"), true);
+  assert.equal(await evaluate(pc, "document.querySelectorAll('.file-size').length"), 8);
   assert.equal(await evaluate(phone, "document.documentElement.scrollWidth <= window.innerWidth"), true);
   const downloaded = path.join(output, '年度报表.xlsx');
   if (fs.existsSync(downloaded)) fs.unlinkSync(downloaded);
@@ -204,6 +212,7 @@ async function until(check, label) {
   assert.equal(await evaluate(pc, "document.getElementById('make-pdf') === null"), true);
   await evaluate(pc, "document.getElementById('add-pdf').click()");
   await until(() => evaluate(pc, "document.querySelectorAll('.pdf-container').length === 1"), 'first PDF container');
+  assert.equal(await evaluate(pc, "getComputedStyle(document.querySelector('.pdf-badge')).backgroundColor"), 'rgb(207, 56, 69)');
   assert.equal(await evaluate(pc, "document.getElementById('add-pdf').disabled"), true);
   await evaluate(pc, "document.querySelector('.pdf-close').click()");
   await until(() => evaluate(pc, "document.querySelectorAll('.pdf-container').length === 0"), 'delete pdf1');
@@ -220,8 +229,23 @@ async function until(check, label) {
       source.dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:data}));
     })()`);
   }
+  const receivedImageWidth = await evaluate(pc, "document.querySelector('.file-preview').getBoundingClientRect().width");
   await drag('.jpg');
   await until(() => evaluate(pc, "document.querySelectorAll('.pdf-member').length === 1"), 'JPG moved into container');
+  const expanded = await evaluate(pc, "(() => { const card = document.querySelector('.pdf-container.image-container'); return { width: card.getBoundingClientRect().width, grid: document.querySelector('.file-grid').getBoundingClientRect().width, tile: card.querySelector('.pdf-thumbnail').getBoundingClientRect().width }; })()");
+  assert(expanded.width > 600 && Math.abs(expanded.width - expanded.grid) < 2 && expanded.tile >= receivedImageWidth * .85 && expanded.tile <= 190);
+  assert.equal(await evaluate(pc, "document.querySelector('.pdf-expand, .pdf-container.wide') === null"), true);
+  assert.equal(await evaluate(pc, "document.querySelector('.image-tile').children.length === 1 && !document.querySelector('.image-tile .pdf-member-name, .image-tile .pdf-member-size')"), true);
+  await evaluate(pc, "document.querySelector('.pdf-preview-trigger').click()");
+  await until(() => evaluate(pc, "document.querySelector('.pdf-image-dialog').open && document.querySelector('.pdf-image-dialog img').naturalWidth > 0"), 'full image preview');
+  assert.equal(await evaluate(pc, "document.querySelector('.pdf-image-dialog img').src.endsWith('/preview') && document.querySelector('.pdf-image-dialog-title').textContent === '照片.jpg'"), true);
+  const previewCapture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, pc);
+  fs.writeFileSync(path.join(output, 'pdf-image-preview.png'), Buffer.from(previewCapture.data, 'base64'));
+  await evaluate(pc, "document.querySelector('.pdf-image-dialog img').src = '/api/files/missing/thumbnail'");
+  await until(() => evaluate(pc, "document.querySelector('.pdf-image-dialog img').hidden && document.querySelector('.pdf-image-dialog-stage').dataset.error"), 'failed preview shows error');
+  assert.equal(await evaluate(pc, "getComputedStyle(document.querySelector('.pdf-image-dialog img')).display"), 'none');
+  await evaluate(pc, "document.querySelector('.pdf-image-dialog-close').click()");
+  assert.equal(await evaluate(pc, "document.querySelector('.pdf-image-dialog').open"), false);
   assert.equal(await evaluate(pc, "(() => { const card = document.querySelector('.pdf-container.has-members'); const action = card.querySelector('.pdf-body'); return Math.abs(card.getBoundingClientRect().bottom - action.getBoundingClientRect().bottom) < 4; })()"), true);
   assert.equal(await evaluate(pc, "document.querySelector('.pdf-container.has-members .pdf-badge') === null && document.querySelector('.pdf-container.has-members .pdf-hint') === null && document.querySelector('.pdf-container.has-members .pdf-download-label').textContent === '下载 PDF'"), true);
   assert.equal(await evaluate(pc, "document.querySelectorAll('.file-card').length"), 7);
@@ -241,7 +265,9 @@ async function until(check, label) {
   await drag('.docx');
   await until(() => evaluate(pc, "document.getElementById('files-status').textContent.includes('相同格式')"), 'mixed format rejected');
   assert.equal(await evaluate(pc, "document.querySelectorAll('.pdf-member').length"), 1);
-  await evaluate(pc, "document.querySelector('.pdf-name').click(); document.querySelector('.pdf-rename').value = '我的相册'; document.querySelector('.pdf-rename').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))");
+  await evaluate(pc, "document.querySelector('.pdf-name').click()");
+  assert.equal(await evaluate(pc, "(() => { const input = document.querySelector('.pdf-rename').getBoundingClientRect(); const close = document.querySelector('.pdf-close').getBoundingClientRect(); return Math.abs(input.height - 42) < 2 && Math.abs((input.top + input.bottom) / 2 - (close.top + close.bottom) / 2) < 2 && input.right + 4 <= close.left; })()"), true);
+  await evaluate(pc, "document.querySelector('.pdf-rename').value = '我的相册'; document.querySelector('.pdf-rename').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}))");
   await until(() => evaluate(pc, "document.querySelector('.pdf-name').textContent === '我的相册'"), 'rename PDF');
   const pdfPath = path.join(output, '我的相册.pdf');
   if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
@@ -253,6 +279,7 @@ async function until(check, label) {
   assert.equal(await evaluate(pc, "document.querySelectorAll('.pdf-name')[1].textContent"), 'pdf2');
   await drag('.xlsx', 1);
   await until(() => evaluate(pc, "document.querySelectorAll('.pdf-member').length === 2"), 'second container populated');
+  assert.equal(await evaluate(pc, "document.querySelectorAll('.pdf-container')[1].querySelector('.pdf-member .file-icon rect').getAttribute('fill')"), '#218354');
   assert.equal(await evaluate(pc, "Array.from(document.querySelectorAll('.pdf-container.has-members')).every(card => Math.abs(card.getBoundingClientRect().bottom - card.querySelector('.pdf-body').getBoundingClientRect().bottom) < 4)"), true);
   await evaluate(pc, "document.querySelectorAll('.pdf-close')[1].click()");
   await until(() => evaluate(pc, "document.querySelectorAll('.pdf-container').length === 1 && Array.from(document.querySelectorAll('.file-card')).some(a => a.download.endsWith('.xlsx'))"), 'remove container restores source');
@@ -331,22 +358,58 @@ async function until(check, label) {
     members[0].dispatchEvent(new DragEvent('drop', {bubbles:true, dataTransfer:data}));
     members[1].dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:data}));
   })()`);
-  await until(() => evaluate(pc, "document.querySelector('.image-members .pdf-member span:not(.pdf-position)').textContent === '第二张.jpg'"), 'drag reordered image');
+  await until(() => evaluate(pc, "document.querySelector('.image-members .pdf-member img').alt === '第二张.jpg'"), 'drag reordered image');
   await evaluate(pc, "document.querySelector('.image-members .pdf-member .pdf-rotate').click()");
   await until(() => evaluate(pc, "document.querySelector('.image-members .pdf-member img').style.transform === 'rotate(90deg)'"), 'clockwise preview rotation');
+  await evaluate(pc, "document.querySelector('.image-members .pdf-preview-trigger').click()");
+  assert.equal(await evaluate(pc, "document.querySelector('.pdf-image-dialog').open && document.querySelector('.pdf-image-dialog img').style.transform.includes('rotate(90deg)')"), true);
+  await evaluate(pc, "document.querySelector('.pdf-image-dialog-close').click()");
   if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
   await evaluate(pc, "document.querySelector('.pdf-body').click()");
   await until(() => fs.existsSync(pdfPath), 'rotated PDF download');
   assert.equal(fs.readFileSync(pdfPath).subarray(0, 5).toString(), '%PDF-');
+  async function addMorePhoto(name) {
+    const uploaded = await evaluate(pc, `(async () => {
+      const sourceId = document.querySelector('.image-members .pdf-member').dataset.fileId;
+      const source = await fetch('/api/files/' + sourceId).then(response => response.blob());
+      const response = await fetch('/api/files', {
+        method: 'POST', headers: {
+          'X-Access-Code': 'ABCD2345', 'X-File-Name': encodeURIComponent('${name}'),
+          'Content-Type': 'application/octet-stream'
+        }, body: source
+      });
+      return response.ok;
+    })()`);
+    assert.equal(uploaded, true);
+    await until(() => evaluate(pc, "Array.from(document.querySelectorAll('.file-card')).some(card => card.download === '" + name + "')"), name + ' received');
+    await drag('.jpg');
+    await until(() => evaluate(pc, "document.querySelectorAll('.image-members .pdf-member').length === " + Number(name.match(/\d+/)[0])), name + ' added');
+  }
+  for (let number = 3; number <= 5; number++) await addMorePhoto(`第${number}张.jpg`);
+  const fiveImages = await evaluate(pc, "(() => { const card = document.querySelector('.image-container'); const tiles = Array.from(card.querySelectorAll('.pdf-thumbnail')).map(tile => tile.getBoundingClientRect()); return { width: card.getBoundingClientRect().width, widths: tiles.map(tile => tile.width), firstRow: tiles.filter(tile => Math.abs(tile.y - tiles[0].y) < 2).length }; })()");
+  assert.equal(fiveImages.width, expanded.width);
+  assert(fiveImages.widths.length === 5 && fiveImages.widths.every(width => Math.abs(width - expanded.tile) < 2));
+  assert(fiveImages.firstRow >= 3);
+  assert.equal(await evaluate(pc, "fetch('/api/latest').then(response => response.json()).then(data => data.pdf_containers[0].format === 'jpg' && data.pdf_containers[0].file_ids.length === 5)"), true);
+  await addMorePhoto('第6张.jpg');
+  const sixImages = await evaluate(pc, "(() => { const card = document.querySelector('.image-container'); const tiles = Array.from(card.querySelectorAll('.pdf-thumbnail')).map(tile => tile.getBoundingClientRect()); return { width: card.getBoundingClientRect().width, widths: tiles.map(tile => tile.width), firstRow: tiles.filter(tile => Math.abs(tile.y - tiles[0].y) < 2).length }; })()");
+  assert(sixImages.width === expanded.width && sixImages.firstRow === fiveImages.firstRow);
+  assert(sixImages.widths.length === 6 && sixImages.widths.every(width => Math.abs(width - expanded.tile) < 2));
   assert.deepEqual(errors, []);
   const capture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, pc);
   fs.writeFileSync(path.join(output, 'receiver.png'), Buffer.from(capture.data, 'base64'));
+  await call('Emulation.setDeviceMetricsOverride', { width: 750, height: 900, deviceScaleFactor: 1, mobile: false }, pc);
+  assert.equal(await evaluate(pc, "(() => { const card = document.querySelector('.image-container'); const tiles = Array.from(card.querySelectorAll('.pdf-thumbnail')); return Math.abs(card.getBoundingClientRect().width - document.querySelector('.file-grid').getBoundingClientRect().width) < 2 && tiles.every(tile => tile.getBoundingClientRect().width <= 190) && card.querySelector('.image-members').clientHeight <= 650; })()"), true);
+  await call('Emulation.setDeviceMetricsOverride', { width: 600, height: 900, deviceScaleFactor: 1, mobile: false }, pc);
+  assert.equal(await evaluate(pc, "(() => { const card = document.querySelector('.image-container'); const strip = card.querySelector('.image-members'); const tiles = Array.from(card.querySelectorAll('.pdf-thumbnail')).map(tile => tile.getBoundingClientRect()); return !card.querySelector('.pdf-expand') && strip.scrollWidth > strip.clientWidth && tiles.every(tile => tile.width <= 190 && Math.abs(tile.y - tiles[0].y) < 2); })()"), true);
   await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true }, pc);
   assert.equal(await evaluate(pc, "document.documentElement.scrollWidth <= window.innerWidth"), true);
+  assert.equal(await evaluate(pc, "(() => { const card = document.querySelector('.image-container'); const strip = card.querySelector('.image-members'); const tiles = Array.from(card.querySelectorAll('.pdf-thumbnail')).map(tile => tile.getBoundingClientRect()); return tiles.length === 6 && tiles.every(tile => tile.width <= 190 && Math.abs(tile.y - tiles[0].y) < 2) && strip.scrollWidth > strip.clientWidth; })()"), true);
   const mobileCapture = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, pc);
   fs.writeFileSync(path.join(output, 'receiver-mobile.png'), Buffer.from(mobileCapture.data, 'base64'));
   await call('Emulation.setDeviceMetricsOverride', { width: 320, height: 740, deviceScaleFactor: 1, mobile: true }, pc);
   assert.equal(await evaluate(pc, "document.documentElement.scrollWidth <= window.innerWidth"), true);
+  assert.equal(await evaluate(pc, "Array.from(document.querySelectorAll('.image-members .pdf-thumbnail')).every(tile => tile.getBoundingClientRect().width <= 190)"), true);
   await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, pc);
   assert.equal(await evaluate(pc, "getComputedStyle(document.querySelector('.file-item')).animationName"), 'none');
   await call('Emulation.setEmulatedMedia', { features: [] }, pc);

@@ -16,6 +16,58 @@ window.PdfFiles = (() => {
     if (text !== undefined) node.textContent = text;
     return node;
   };
+  let previewDialog;
+  function openImagePreview(file, rotation) {
+    if (!previewDialog) {
+      const dialog = element('dialog', 'pdf-image-dialog');
+      const header = element('div', 'pdf-image-dialog-header');
+      const title = element('strong', 'pdf-image-dialog-title');
+      title.id = 'pdf-image-dialog-title';
+      dialog.setAttribute('aria-labelledby', title.id);
+      const close = element('button', 'pdf-image-dialog-close', '×');
+      close.type = 'button';
+      close.setAttribute('aria-label', t('关闭预览'));
+      close.addEventListener('click', () => dialog.close());
+      header.append(title, close);
+      const stage = element('div', 'pdf-image-dialog-stage');
+      const image = element('img');
+      stage.append(image);
+      dialog.append(header, stage);
+      dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+      document.body.append(dialog);
+      previewDialog = { dialog, title, image, stage, close, rotation: 0 };
+      window.addEventListener('resize', fitImagePreview);
+    }
+    const { dialog, title, image, close } = previewDialog;
+    title.textContent = file.name;
+    close.setAttribute('aria-label', t('关闭预览'));
+    image.alt = file.name;
+    previewDialog.rotation = rotation;
+    image.onload = fitImagePreview;
+    image.onerror = () => {
+      const fallback = `/api/files/${encodeURIComponent(file.id)}/thumbnail`;
+      if (image.src.endsWith('/thumbnail')) {
+        image.hidden = true;
+        previewDialog.stage.dataset.error = t('无法预览');
+      } else image.src = fallback;
+    };
+    image.hidden = false;
+    delete previewDialog.stage.dataset.error;
+    image.src = file.preview_url || `/api/files/${encodeURIComponent(file.id)}/thumbnail`;
+    dialog.showModal();
+  }
+  function fitImagePreview() {
+    if (!previewDialog) return;
+    const { image, stage, rotation } = previewDialog;
+    if (!image.naturalWidth || !image.naturalHeight || image.hidden) return;
+    const sideways = rotation % 180 !== 0;
+    const width = sideways ? image.naturalHeight : image.naturalWidth;
+    const height = sideways ? image.naturalWidth : image.naturalHeight;
+    const scale = Math.min(stage.clientWidth / width, stage.clientHeight / height);
+    image.style.width = `${Math.floor(image.naturalWidth * scale)}px`;
+    image.style.height = `${Math.floor(image.naturalHeight * scale)}px`;
+    image.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+  }
   function tell(text) { message.textContent = text; }
   function updateDownloadControls() {
     if (!snapshot) return;
@@ -109,6 +161,10 @@ window.PdfFiles = (() => {
   function containerCard(container, files) {
     const item = element('li', 'pdf-container');
     item.dataset.containerId = container.id;
+    const members = container.file_ids.map(id => files.get(id)).filter(Boolean);
+    const isImage = imageFormats.has(container.format);
+    item.classList.toggle('has-members', members.length > 0);
+    item.classList.toggle('image-container', isImage);
     const header = element('div', 'pdf-header');
     const select = element('input', 'pdf-select'); select.type = 'checkbox';
     select.disabled = !container.file_ids.length;
@@ -128,12 +184,11 @@ window.PdfFiles = (() => {
     close.type = 'button'; close.title = t('移除容器，保留文件');
     close.setAttribute('aria-label', t('移除 {name}', {name: container.name}));
     close.addEventListener('click', event => { event.stopPropagation(); action({ action: 'delete', id: container.id }); });
-    header.append(select, name, close);
+    header.append(select, name);
+    header.append(close);
     const body = element('div', 'pdf-body');
     body.tabIndex = 0; body.setAttribute('role', 'button');
     body.setAttribute('aria-label', t('转换并下载 {name}.pdf', {name: container.name}));
-    const members = container.file_ids.map(id => files.get(id)).filter(Boolean);
-    item.classList.toggle('has-members', members.length > 0);
     if (members.length) {
       body.append(element('span', 'pdf-download-label', t('下载 PDF')));
     } else {
@@ -146,13 +201,15 @@ window.PdfFiles = (() => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); download({ container_id: container.id }); }
     });
     item.append(header);
-    const isImage = imageFormats.has(container.format);
     const memberList = element('ul', isImage ? 'pdf-members image-members' : 'pdf-members');
     members.forEach((file, index) => {
       const row = element('li', 'pdf-member');
       row.dataset.fileId = file.id;
+      let thumb;
       if (isImage) {
-        const thumb = element('div', 'pdf-thumbnail');
+        row.classList.add('image-tile');
+        row.title = t('拖动图片调整顺序');
+        thumb = element('div', 'pdf-thumbnail');
         const image = element('img');
         image.src = `/api/files/${encodeURIComponent(file.id)}/thumbnail`;
         image.alt = file.name;
@@ -163,7 +220,16 @@ window.PdfFiles = (() => {
           thumb.classList.add('thumbnail-error');
           image.replaceWith(element('span', '', t('无法预览')));
         }, { once: true });
-        thumb.append(image);
+        const preview = element('button', 'pdf-preview-trigger');
+        preview.type = 'button';
+        preview.title = t('预览 {name}', {name: file.name});
+        preview.setAttribute('aria-label', preview.title);
+        preview.addEventListener('click', event => {
+          event.stopPropagation();
+          openImagePreview(file, container.rotations?.[file.id] || 0);
+        });
+        preview.append(image);
+        thumb.append(preview);
         const rotate = element('button', 'pdf-rotate', '↻');
         rotate.type = 'button'; rotate.draggable = false;
         rotate.title = t('顺时针旋转 {name} 90°', {name: file.name});
@@ -173,15 +239,22 @@ window.PdfFiles = (() => {
           action({ action: 'rotate', id: container.id, file_id: file.id });
         });
         thumb.append(rotate);
-        row.append(thumb);
       }
-      const position = element('span', 'pdf-position', String(index + 1));
-      const label = element('span', '', file.name);
-      label.title = file.name;
       const remove = element('button', 'pdf-remove-file', '↗');
       remove.type = 'button'; remove.title = t('移出容器'); remove.setAttribute('aria-label', t('移出 {name}', {name: file.name}));
       remove.addEventListener('click', event => { event.stopPropagation(); action({ action: 'remove', id: container.id, file_id: file.id }); });
-      row.append(position, label, remove);
+      if (isImage) {
+        thumb.append(remove);
+        row.append(thumb);
+      } else {
+        const position = element('span', 'pdf-position', String(index + 1));
+        const details = element('div', 'pdf-member-details');
+        const label = element('span', 'pdf-member-name', file.name);
+        label.title = file.name;
+        const size = element('small', 'pdf-member-size', LocalFiles.formatSize(file.bytes));
+        details.append(label, size);
+        row.append(LocalFiles.fileIcon(file.category), position, details, remove);
+      }
       dragSource(row, file, true);
       dropTarget(row, ids => {
         const origin = container.file_ids.indexOf(ids[0]);

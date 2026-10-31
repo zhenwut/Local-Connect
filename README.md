@@ -20,7 +20,7 @@
 py -3 run_local_connect.py
 ```
 
-两种方式都会打开 `http://localhost:8766/receiver`；依次用手机扫描两个二维码。部分手机需在加入无互联网的热点时选择“保持连接”。用 `py -3 run_local_connect.py --port 9000` 可更改端口；按 `Ctrl+C` 停止服务。
+两种方式都会打开 `http://localhost:8000/receiver`；依次用手机扫描两个二维码。部分手机需在加入无互联网的热点时选择“保持连接”。用 `py -3 run_local_connect.py --port 9000` 可更改端口；按 `Ctrl+C` 停止服务。
 
 代码同步到 GitHub 后，可在 PowerShell 一行克隆并运行（需 Git、Python 3.10+ 和网络；仓库仍为私有时还需访问权限）：
 
@@ -28,13 +28,13 @@ py -3 run_local_connect.py
 git clone https://github.com/zhenwut/local-connect.git; if ($LASTEXITCODE -eq 0) { Set-Location local-connect; py -3 run_local_connect.py }
 ```
 
-热点不可用时，手机入口不会开放到其他局域网。如果第二个二维码打开超时，可在管理员 PowerShell 中运行一次：
+热点不可用时，手机入口不会开放到其他局域网。如果第二个二维码打开超时，或此前只为旧端口 8766 配置过防火墙，可在管理员 PowerShell 中运行一次：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_hotspot_firewall.ps1
 ```
 
-默认端口为 `8766`；更改端口时，防火墙脚本也需传入对应的 `-Port`。`python server.py` 仅供手动启动，不负责安装依赖或打开网页。
+默认端口为 `8000`；更改端口时，防火墙脚本也需传入对应的 `-Port`。`python server.py` 仅供手动启动，不负责安装依赖或打开网页。
 
 ## 格式与限制
 

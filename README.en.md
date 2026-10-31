@@ -20,7 +20,7 @@ The computer needs Python 3.10+ with pip; phone access requires a working Window
 py -3 run_local_connect.py
 ```
 
-Either way, `http://localhost:8766/receiver` opens automatically. Scan both QR codes with the phone. If the phone warns that the hotspot has no internet, choose to stay connected. Use `py -3 run_local_connect.py --port 9000` for another port; press `Ctrl+C` to stop.
+Either way, `http://localhost:8000/receiver` opens automatically. Scan both QR codes with the phone. If the phone warns that the hotspot has no internet, choose to stay connected. Use `py -3 run_local_connect.py --port 9000` for another port; press `Ctrl+C` to stop.
 
 Once these changes are synced to GitHub, clone and run with one PowerShell line (requires Git, Python 3.10+, and network access; a private repository also requires access):
 
@@ -28,13 +28,13 @@ Once these changes are synced to GitHub, clone and run with one PowerShell line 
 git clone https://github.com/zhenwut/local-connect.git; if ($LASTEXITCODE -eq 0) { Set-Location local-connect; py -3 run_local_connect.py }
 ```
 
-If the hotspot is unavailable, the phone endpoint does not open on another LAN. If the second QR code times out, run this once in an administrator PowerShell window:
+If the hotspot is unavailable, the phone endpoint does not open on another LAN. If the second QR code times out, or your firewall was configured only for the former port 8766, run this once in an administrator PowerShell window:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup_hotspot_firewall.ps1
 ```
 
-The default port is `8766`. Pass the matching `-Port` to the firewall script when changing it. `python server.py` is a manual start command; it does not install dependencies or open a browser.
+The default port is `8000`. Pass the matching `-Port` to the firewall script when changing it. `python server.py` is a manual start command; it does not install dependencies or open a browser.
 
 ## Formats and limits
 

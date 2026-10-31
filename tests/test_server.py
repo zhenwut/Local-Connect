@@ -182,8 +182,8 @@ class TransferServerTests(unittest.TestCase):
         connection.password = "random-password"
         connection.hotspot = {"active": True, "ip": "192.168.137.1", "password": connection.password}
         local_server = Mock(connection=connection)
-        phone_server = Mock(server_address=("192.168.137.1", 8766))
-        listener = HotspotPhoneListener(local_server, "ABCD2345", 8766)
+        phone_server = Mock(server_address=("192.168.137.1", 8000))
+        listener = HotspotPhoneListener(local_server, "ABCD2345", 8000)
         with patch("server.TransferServer", side_effect=[OSError(10049, "address not ready"), phone_server]), \
              patch("server.threading.Thread") as thread:
             self.assertFalse(listener.refresh())
@@ -221,7 +221,7 @@ class TransferServerTests(unittest.TestCase):
         self.server.connection = Mock()
         self.server.connection.snapshot.return_value = {
             "mode": "web", "code": "ABCD2345",
-            "web_qr": "http://192.168.137.1:8766/#code=ABCD2345",
+            "web_qr": "http://192.168.137.1:8000/#code=ABCD2345",
         }
         try:
             status, body = self.request("/api/connect")
